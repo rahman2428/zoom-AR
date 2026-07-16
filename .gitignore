@@ -1,0 +1,13 @@
+.next
+node_modules
+dist
+out
+coverage
+*.log
+*.tsbuildinfo
+
+
+# OpenNext
+.open-next
+.wrangler
+.dev.vars
