@@ -1,6 +1,6 @@
 :root {
-  --bg-0: #050408;
-  --bg-1: #09070d;
+  --bg-0: #ffffff;
+  --bg-1: #422d06;
   --bg-2: #140b08;
   --text-0: #f2ece6;
   --text-1: rgba(242, 236, 230, 0.78);
@@ -11,7 +11,7 @@
   --surface-strong: rgba(16, 12, 15, 0.84);
   --gold: #d8b15b;
   --gold-strong: #f1d189;
-  --danger: #d35e3a;
+  --danger: #f1ba02;
   --shadow-xl: 0 34px 90px rgba(0, 0, 0, 0.55);
   --shadow-lg: 0 20px 60px rgba(0, 0, 0, 0.46);
 }

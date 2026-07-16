@@ -1,8 +1,8 @@
 import type { RestaurantMenu } from "./types";
 
 export const restaurantMenu: RestaurantMenu = {
-  brand: "Lumiere Table",
-  headline: "A cinematic AR tasting room for every table.",
+  brand: "Zoom Food Plaza",
+  headline: "A cinematic AR tasting room for your table.",
   subheadline:
     "Swipe through signature dishes, inspect every finish in 3D, and place the plate in your space with the best engine your device can support.",
   categories: [
