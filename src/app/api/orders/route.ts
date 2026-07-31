@@ -8,9 +8,7 @@ const globalForOrders = globalThis as unknown as {
 };
 
 const ordersStore: RestaurantOrder[] = globalForOrders.ordersStore ?? [];
-if (process.env.NODE_ENV !== "production") {
-  globalForOrders.ordersStore = ordersStore;
-}
+globalForOrders.ordersStore = ordersStore;
 
 const KITCHEN_STAFF_KEY = process.env.KITCHEN_STAFF_KEY || "8899";
 const PAYMENT_SECRET_KEY = process.env.PAYMENT_SECRET_KEY || "CINEMATIC_AR_REST_PAY_SECRET_9981273";
@@ -31,7 +29,7 @@ function getCorsHeaders(request: Request) {
     origin.endsWith(".vercel.app") ||
     process.env.NODE_ENV !== "production";
 
-  const allowOrigin = isAllowed ? (origin || "*") : "https://zoom-ar.vercel.app";
+  const allowOrigin = isAllowed && origin ? origin : "https://zoom-ar.vercel.app";
 
   return {
     "Access-Control-Allow-Origin": allowOrigin,
