@@ -71,6 +71,8 @@ export interface OrderItem {
 export interface RestaurantOrder {
   orderId: string;
   customerToken?: string;
+  transactionId?: string;
+  paymentSignature?: string;
   tableNumber: string;
   chairCode?: string;
   location: string;

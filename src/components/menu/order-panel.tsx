@@ -57,6 +57,26 @@ export function OrderPanel({ dish, onClose, onTrackOrder }: OrderPanelProps) {
     return true;
   }
 
+async function generatePaymentSignatureClient(transactionId: string, totalInr: number, timestamp: number): Promise<string> {
+  const secretKey = "CINEMATIC_AR_REST_PAY_SECRET_9981273";
+  const encoder = new TextEncoder();
+  const keyData = encoder.encode(secretKey);
+  const messageData = encoder.encode(`${transactionId}:${totalInr}:${timestamp}`);
+
+  const cryptoKey = await window.crypto.subtle.importKey(
+    "raw",
+    keyData,
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+
+  const signatureBuffer = await window.crypto.subtle.sign("HMAC", cryptoKey, messageData);
+  return Array.from(new Uint8Array(signatureBuffer))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
   async function finalizePaidOrder() {
     setPaymentState("sending");
     setErrorMessage("");
@@ -70,6 +90,10 @@ export function OrderPanel({ dish, onClose, onTrackOrder }: OrderPanelProps) {
     };
 
     try {
+      const transactionId = `TXN-${Date.now().toString(36).toUpperCase()}${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+      const paymentTimestamp = Date.now();
+      const paymentSignature = await generatePaymentSignatureClient(transactionId, totalInr, paymentTimestamp);
+
       const response = await fetch("/api/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -82,7 +106,10 @@ export function OrderPanel({ dish, onClose, onTrackOrder }: OrderPanelProps) {
           items: [item],
           totalInr,
           paymentStatus: "paid",
-          paymentMethod
+          paymentMethod,
+          transactionId,
+          paymentTimestamp,
+          paymentSignature
         })
       });
 
