@@ -18,6 +18,8 @@ import { useQuickLookAvailability } from "@/hooks/use-quick-look-availability";
 import { CameraArModal } from "@/components/rendering/camera-ar-modal";
 import { RenderStage, type RenderStageHandle } from "@/components/rendering/render-stage";
 import { CategoryTabs } from "./category-tabs";
+import { OrderPanel } from "./order-panel";
+import { OrderTracker } from "./order-tracker";
 
 interface MenuExperienceProps {
   menu: RestaurantMenu;
@@ -73,6 +75,10 @@ export function MenuExperience({ menu }: MenuExperienceProps) {
   );
   const [searchInput, setSearchInput] = useState("");
   const [cameraModalOpen, setCameraModalOpen] = useState(false);
+  const [orderPanelOpen, setOrderPanelOpen] = useState(false);
+  const [trackerOpen, setTrackerOpen] = useState(false);
+  const [trackerOrderId, setTrackerOrderId] = useState<string | undefined>();
+  const [trackerCustomerToken, setTrackerCustomerToken] = useState<string | undefined>();
   const [launchState, setLaunchState] = useState<"idle" | "launching">("idle");
   const deferredSearchInput = useDeferredValue(searchInput);
   const normalizedSearchQuery = deferredSearchInput.trim().toLowerCase();
@@ -257,7 +263,16 @@ export function MenuExperience({ menu }: MenuExperienceProps) {
           />
         </div>
 
-        <span className="interactive-pill">3D Interactive</span>
+        <div className="experience-header__actions">
+          <button
+            className="tracker-link-pill"
+            onClick={() => setTrackerOpen(true)}
+            type="button"
+          >
+            📍 Track Order
+          </button>
+          <span className="interactive-pill">3D Interactive</span>
+        </div>
       </header>
 
       <section className="experience-search glass-panel">
@@ -394,6 +409,14 @@ export function MenuExperience({ menu }: MenuExperienceProps) {
         >
           {arButtonLabel}
         </button>
+        <button
+          className="experience-footer__order"
+          disabled={!hasSearchResults}
+          onClick={() => setOrderPanelOpen(true)}
+          type="button"
+        >
+          Order this dish
+        </button>
 
         <div className="experience-footer__quick-controls">
           <button
@@ -423,6 +446,24 @@ export function MenuExperience({ menu }: MenuExperienceProps) {
         onClose={() => setCameraModalOpen(false)}
         open={cameraModalOpen}
       />
+      {orderPanelOpen ? (
+        <OrderPanel
+          dish={currentDish}
+          onClose={() => setOrderPanelOpen(false)}
+          onTrackOrder={(orderId, customerToken) => {
+            setTrackerOrderId(orderId);
+            setTrackerCustomerToken(customerToken);
+            setTrackerOpen(true);
+          }}
+        />
+      ) : null}
+      {trackerOpen ? (
+        <OrderTracker
+          initialOrderId={trackerOrderId}
+          initialToken={trackerCustomerToken}
+          onClose={() => setTrackerOpen(false)}
+        />
+      ) : null}
     </main>
   );
 }

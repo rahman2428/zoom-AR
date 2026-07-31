@@ -96,15 +96,15 @@ export const RenderStage = forwardRef<RenderStageHandle, RenderStageProps>(funct
     return () => {
       cancelled = true;
     };
-   }, [controllerGeneration, dish]);
+  }, [controllerGeneration, dish]);
 
   useEffect(() => {
-     if (controllerGeneration === 0) {
+    if (controllerGeneration === 0) {
       return;
     }
 
     preloadDishes.forEach((entry) => controllerRef.current?.preloadDish(entry));
-   }, [controllerGeneration, preloadDishes]);
+  }, [controllerGeneration, preloadDishes]);
 
   useImperativeHandle(
     ref,

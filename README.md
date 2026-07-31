@@ -65,19 +65,26 @@ public/models/usdz/momo-basket.usdz
 
 Once `usdzReady` is flipped to `true` for a dish in `src/lib/menu/catalog.ts`, the iOS CTA automatically changes from a prepared state to a live Quick Look launcher.
 
+## Ordering and Kitchen Dispatch
 
+The dish footer includes a table-service checkout that captures:
 
+- table/chair location, with the chair optional (`5A` or `5`)
+- customer name and mobile number
+- dish, quantity, and half/full plate selection
 
+The `POST /api/orders` route accepts only a complete payload whose `paymentStatus` is `paid`. It creates an order ID and forwards the finalized order to the mobile kitchen through `KITCHEN_WEBHOOK_URL`. Configure that variable in the deployment environment before enabling ordering in production. The kitchen endpoint should return a 2xx response after it has accepted the order.
+
+The payment screen currently acts as the payment-provider adapter boundary. Replace its success callback with the provider's verified success/webhook flow before production, then call `/api/orders` only after that verification. Do not mark an order paid from an untrusted client-side value in a live deployment.
 
 <!-- run shear link
 
- & "C:\Users\Abadur\Downloads\cloudflared.exe" tunnel --url http://localhost:3000 --protocol http2   
- 
+ & "C:\Users\Abadur\Downloads\cloudflared.exe" tunnel --url http://localhost:3000 --protocol http2
+
  -->
 
-
- npm.cmd run build
+npm.cmd run build
 
 npm run dev
 
- Validation is clean: lint, typecheck, and build all pass.
+Validation is clean: lint, typecheck, and build all pass.
