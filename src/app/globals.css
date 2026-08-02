@@ -1,4 +1,8 @@
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Manrope:wght@400;500;600;700&display=swap');
+
 :root {
+  --font-body: 'Manrope', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-display: 'Cormorant Garamond', Georgia, Garamond, serif;
   --bg-0: #ffffff;
   --bg-1: #422d06;
   --bg-2: #140b08;

@@ -1,14 +1,138 @@
 import { NextResponse } from "next/server";
 import crypto from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
 import type { OrderStatus, PaymentMethod, RestaurantOrder } from "@/lib/menu/types";
+
+// 1 Month Retention Horizon (30 Calendar Days in milliseconds)
+const ONE_MONTH_MS = 30 * 24 * 60 * 60 * 1000;
 
 // Persist across hot reloads in dev mode
 const globalForOrders = globalThis as unknown as {
   ordersStore?: RestaurantOrder[];
 };
 
-const ordersStore: RestaurantOrder[] = globalForOrders.ordersStore ?? [];
-globalForOrders.ordersStore = ordersStore;
+function getStoreFilePath(): string {
+  const localDir = path.join(process.cwd(), "data");
+  try {
+    if (!fs.existsSync(localDir)) {
+      fs.mkdirSync(localDir, { recursive: true });
+    }
+    return path.join(localDir, "orders.json");
+  } catch {
+    return path.join("/tmp", "orders.json");
+  }
+}
+
+function loadOrdersFromDisk(): RestaurantOrder[] {
+  try {
+    const filePath = getStoreFilePath();
+    if (fs.existsSync(filePath)) {
+      const raw = fs.readFileSync(filePath, "utf8");
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        return parsed;
+      }
+    }
+  } catch {
+    // Fail gracefully to memory store if filesystem is unavailable
+  }
+  return [];
+}
+
+function pruneAndPersistOrders(orders: RestaurantOrder[]): RestaurantOrder[] {
+  const cutoffTime = Date.now() - ONE_MONTH_MS;
+  
+  // Retain exclusively orders created within the last 30 calendar days (1 month)
+  const validOrders = orders.filter((ord) => {
+    const createdTime = new Date(ord.createdAt).getTime();
+    return !isNaN(createdTime) && createdTime >= cutoffTime;
+  });
+
+  // Sort descending by creation timestamp (newest first)
+  validOrders.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+  // Update in-memory reference
+  globalForOrders.ordersStore = validOrders;
+
+  // Persist to disk
+  try {
+    const filePath = getStoreFilePath();
+    fs.writeFileSync(filePath, JSON.stringify(validOrders, null, 2), "utf8");
+  } catch {
+    // Ignore write errors on read-only environments
+  }
+
+  return validOrders;
+}
+
+function getStoredOrders(): RestaurantOrder[] {
+  if (!globalForOrders.ordersStore || globalForOrders.ordersStore.length === 0) {
+    globalForOrders.ordersStore = loadOrdersFromDisk();
+  }
+  return pruneAndPersistOrders(globalForOrders.ordersStore);
+}
+
+function saveStoredOrders(orders: RestaurantOrder[]) {
+  pruneAndPersistOrders(orders);
+}
+
+function generateOrdersCSV(orders: RestaurantOrder[]): string {
+  const headers = [
+    "Order ID",
+    "Date & Time",
+    "Table",
+    "Customer Name",
+    "Mobile Number",
+    "Items Summary",
+    "Total Paid (INR)",
+    "Payment Method",
+    "Payment Status",
+    "Order Status"
+  ];
+
+  const rows = orders.map((o) => {
+    const itemsSummary = o.items
+      .map((i) => `${i.quantity}x ${i.dishName} (${i.plateSize}) @ ₹${i.unitPriceInr}`)
+      .join(" | ");
+
+    const formattedDate = new Date(o.createdAt).toLocaleString("en-IN", {
+      dateStyle: "medium",
+      timeStyle: "short"
+    });
+
+    return [
+      `"${o.orderId.replace(/"/g, '""')}"`,
+      `"${formattedDate.replace(/"/g, '""')}"`,
+      `"${o.location.replace(/"/g, '""')}"`,
+      `"${o.customerName.replace(/"/g, '""')}"`,
+      `"${o.mobileNumber.replace(/"/g, '""')}"`,
+      `"${itemsSummary.replace(/"/g, '""')}"`,
+      o.totalInr,
+      `"${(o.paymentMethod || "upi").toUpperCase()}"`,
+      `"${(o.paymentStatus || "paid").toUpperCase()}"`,
+      `"${o.status.toUpperCase()}"`
+    ];
+  });
+
+  return [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+}
+
+function filterOrdersByRange(orders: RestaurantOrder[], range?: string | null): RestaurantOrder[] {
+  if (!range || range === "all" || range === "30d") {
+    return orders;
+  }
+  const now = Date.now();
+  if (range === "24h") {
+    const cutoff = now - 24 * 60 * 60 * 1000;
+    return orders.filter((o) => new Date(o.createdAt).getTime() >= cutoff);
+  }
+  if (range === "7d") {
+    const cutoff = now - 7 * 24 * 60 * 60 * 1000;
+    return orders.filter((o) => new Date(o.createdAt).getTime() >= cutoff);
+  }
+  return orders;
+}
 
 const KITCHEN_STAFF_KEY = process.env.KITCHEN_STAFF_KEY || "8899";
 const PAYMENT_SECRET_KEY = process.env.PAYMENT_SECRET_KEY || "CINEMATIC_AR_REST_PAY_SECRET_9981273";
@@ -164,6 +288,9 @@ export async function GET(request: Request) {
   const orderId = searchParams.get("orderId");
   const token = searchParams.get("token");
   const verifyStaff = searchParams.get("verifyStaff");
+  const isExport = searchParams.get("export") === "true";
+  const exportFormat = searchParams.get("format") || "csv";
+  const dateRange = searchParams.get("range") || "30d";
   const clientIp = getClientIp(request);
 
   // Check Staff PIN verification query with Rate Limiting
@@ -188,14 +315,57 @@ export async function GET(request: Request) {
     );
   }
 
+  const currentOrders = getStoredOrders();
+
+  // Export Request for Authorized Staff
+  if (isExport) {
+    if (!isStaffAuthorized(request)) {
+      return NextResponse.json(
+        { error: "Kitchen staff authentication required for exporting order data." },
+        { status: 401, headers: corsHeaders }
+      );
+    }
+
+    const filtered = filterOrdersByRange(currentOrders, dateRange);
+
+    if (exportFormat === "json") {
+      return new NextResponse(JSON.stringify(filtered, null, 2), {
+        status: 200,
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/json",
+          "Content-Disposition": `attachment; filename="zoom_ar_orders_${dateRange}_${Date.now()}.json"`
+        }
+      });
+    }
+
+    const csvContent = generateOrdersCSV(filtered);
+    return new NextResponse(csvContent, {
+      status: 200,
+      headers: {
+        ...corsHeaders,
+        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": `attachment; filename="zoom_ar_orders_${dateRange}_${Date.now()}.csv"`
+      }
+    });
+  }
+
   // Kitchen Staff access: Full Queue Access
   if (isStaffAuthorized(request)) {
-    return NextResponse.json({ orders: ordersStore, authorized: true }, { status: 200, headers: corsHeaders });
+    return NextResponse.json(
+      {
+        orders: currentOrders,
+        authorized: true,
+        retentionPolicy: "30_days_auto_pruned",
+        totalOrdersRetained: currentOrders.length
+      },
+      { status: 200, headers: corsHeaders }
+    );
   }
 
   // Customer isolated access by Order ID & matching Customer Security Token
   if (orderId) {
-    const target = ordersStore.find((o) => o.orderId.toLowerCase() === orderId.trim().toLowerCase());
+    const target = currentOrders.find((o) => o.orderId.toLowerCase() === orderId.trim().toLowerCase());
     if (!target) {
       return NextResponse.json({ error: "Order not found." }, { status: 404, headers: corsHeaders });
     }
@@ -311,8 +481,9 @@ export async function POST(request: Request) {
     createdAt: new Date().toISOString()
   };
 
-  // Add to top of in-memory store
-  ordersStore.unshift(finalizedOrder);
+  const currentOrders = getStoredOrders();
+  currentOrders.unshift(finalizedOrder);
+  saveStoredOrders(currentOrders);
 
   // Dispatch to optional webhook
   const kitchenWebhookUrl = process.env.KITCHEN_WEBHOOK_URL;
@@ -355,11 +526,14 @@ export async function PATCH(request: Request) {
     );
   }
 
-  const targetOrder = ordersStore.find((o) => o.orderId === body.orderId);
+  const currentOrders = getStoredOrders();
+  const targetOrder = currentOrders.find((o) => o.orderId === body.orderId);
   if (!targetOrder) {
     return NextResponse.json({ error: "Order not found." }, { status: 404, headers: corsHeaders });
   }
 
   targetOrder.status = body.status;
+  saveStoredOrders(currentOrders);
+
   return NextResponse.json({ success: true, order: targetOrder }, { status: 200, headers: corsHeaders });
-}
+}
