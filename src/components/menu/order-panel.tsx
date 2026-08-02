@@ -22,7 +22,8 @@ export function OrderPanel({ dish, onClose, onTrackOrder }: OrderPanelProps) {
   const [plateSize, setPlateSize] = useState<PlateSize>("full");
   const [quantity, setQuantity] = useState(1);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("upi");
-  const [upiId, setUpiId] = useState("");
+  const [utrNumber, setUtrNumber] = useState("");
+  const [copiedUpi, setCopiedUpi] = useState(false);
   const [cardNumber, setCardNumber] = useState("");
   const [cardExpiry, setCardExpiry] = useState("");
   const [cardCvv, setCardCvv] = useState("");
@@ -32,12 +33,28 @@ export function OrderPanel({ dish, onClose, onTrackOrder }: OrderPanelProps) {
   const [confirmedOrderId, setConfirmedOrderId] = useState("");
   const [confirmedToken, setConfirmedToken] = useState("");
 
+  const MERCHANT_UPI_ID = "8603412912@sbi";
+  const MERCHANT_NAME = "Zoom AR Kitchen";
+
   const cleanTable = tableNumber.trim().toUpperCase();
   const cleanChair = chairCode.trim().toUpperCase();
   const formattedLocation = cleanTable ? (cleanChair ? `${cleanTable}${cleanChair}` : cleanTable) : "";
 
   const unitPriceInr = plateSize === "full" ? dish.priceInr : halfPlatePrice(dish.priceInr);
   const totalInr = unitPriceInr * quantity;
+
+  const upiIntentUrl = `upi://pay?pa=${MERCHANT_UPI_ID}&pn=${encodeURIComponent(MERCHANT_NAME)}&am=${totalInr}&cu=INR&tn=${encodeURIComponent(`ZoomAR_${dish.name.replace(/\s+/g, "_")}`)}`;
+  const upiQrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(upiIntentUrl)}`;
+
+  function handleCopyUpi() {
+    try {
+      void navigator.clipboard.writeText(MERCHANT_UPI_ID);
+      setCopiedUpi(true);
+      setTimeout(() => setCopiedUpi(false), 2500);
+    } catch {
+      // Fallback ignore
+    }
+  }
 
   function validateDetails() {
     if (!cleanTable) {
@@ -78,6 +95,14 @@ async function generatePaymentSignatureClient(transactionId: string, totalInr: n
 }
 
   async function finalizePaidOrder() {
+    if (paymentMethod === "upi") {
+      const cleanUtr = utrNumber.trim();
+      if (!cleanUtr || cleanUtr.length < 8) {
+        setErrorMessage("Please enter your Bank UTR / Ref Number (e.g., 423819283741) after making payment.");
+        return;
+      }
+    }
+
     setPaymentState("sending");
     setErrorMessage("");
 
@@ -107,6 +132,8 @@ async function generatePaymentSignatureClient(transactionId: string, totalInr: n
           totalInr,
           paymentStatus: "paid",
           paymentMethod,
+          utrNumber: utrNumber.trim() || undefined,
+          payeeUpi: MERCHANT_UPI_ID,
           transactionId,
           paymentTimestamp,
           paymentSignature
@@ -159,6 +186,11 @@ async function generatePaymentSignatureClient(transactionId: string, totalInr: n
             <p>
               Order <strong>#{confirmedOrderId}</strong> for Table <strong>{formattedLocation}</strong> has been paid and transmitted to the kitchen.
             </p>
+            {utrNumber ? (
+              <p className="utr-confirmation">
+                Payment UTR Ref: <code>{utrNumber}</code> · Sent to Merchant <code>{MERCHANT_UPI_ID}</code>
+              </p>
+            ) : null}
             {onTrackOrder ? (
               <button
                 className="order-panel__primary"
@@ -262,7 +294,7 @@ async function generatePaymentSignatureClient(transactionId: string, totalInr: n
               </form>
             ) : (
               <div className="order-panel__payment">
-                <span className="eyebrow">Checkout & Payment Gate</span>
+                <span className="eyebrow">Checkout & UPI Payment Gate</span>
                 <h3>Confirm payment of {formatPrice(totalInr)}</h3>
                 <p>Location: <strong>Table {formattedLocation}</strong> · {customerName}</p>
 
@@ -271,7 +303,7 @@ async function generatePaymentSignatureClient(transactionId: string, totalInr: n
                   <div className="order-panel__payment-methods">
                     {(
                       [
-                        { id: "upi", label: "UPI / QR" },
+                        { id: "upi", label: "Instant UPI / QR" },
                         { id: "card", label: "Debit/Credit Card" },
                         { id: "netbanking", label: "NetBanking" },
                         { id: "desk", label: "Pay at Desk" }
@@ -291,16 +323,43 @@ async function generatePaymentSignatureClient(transactionId: string, totalInr: n
 
                 <div className="order-panel__payment-details">
                   {paymentMethod === "upi" ? (
-                    <div className="payment-method-box">
-                      <label>
-                        UPI ID / VPA
-                        <input
-                          placeholder="e.g. 9876543210@upi or name@okaxis"
-                          value={upiId}
-                          onChange={(e) => setUpiId(e.target.value)}
-                        />
-                      </label>
-                      <span className="payment-hint">Supported: Google Pay, PhonePe, Paytm, BHIM</span>
+                    <div className="payment-upi-box">
+                      <div className="upi-qr-card">
+                        <div className="upi-qr-wrapper">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={upiQrCodeUrl} alt="Scan to Pay via UPI" className="upi-qr-img" width={180} height={180} />
+                          <span className="upi-qr-amount">Scan & Pay {formatPrice(totalInr)}</span>
+                        </div>
+
+                        <div className="upi-vpa-details">
+                          <span className="upi-vpa-label">Payee Merchant VPA:</span>
+                          <div className="upi-vpa-row">
+                            <strong className="upi-vpa-code">{MERCHANT_UPI_ID}</strong>
+                            <button type="button" className="upi-copy-btn" onClick={handleCopyUpi}>
+                              {copiedUpi ? "✓ Copied" : "📋 Copy ID"}
+                            </button>
+                          </div>
+                          <span className="upi-merchant-name">Name: {MERCHANT_NAME}</span>
+                        </div>
+                      </div>
+
+                      <a href={upiIntentUrl} className="upi-app-launcher-btn">
+                        📱 Open UPI App (GPay / PhonePe / Paytm / BHIM)
+                      </a>
+
+                      <div className="upi-utr-field">
+                        <label>
+                          Step 2: Enter 12-Digit Bank UTR / Ref No. <span className="required-star">*</span>
+                          <input
+                            placeholder="e.g. 423819283741 (from app receipt)"
+                            value={utrNumber}
+                            onChange={(e) => setUtrNumber(e.target.value.replace(/[^0-9A-Za-z]/g, ""))}
+                            maxLength={18}
+                            required
+                          />
+                        </label>
+                        <span className="payment-hint">Enter your 12-digit transaction ID after paying so the kitchen can confirm credit.</span>
+                      </div>
                     </div>
                   ) : paymentMethod === "card" ? (
                     <div className="payment-method-box">
@@ -367,7 +426,7 @@ async function generatePaymentSignatureClient(transactionId: string, totalInr: n
                   onClick={() => void finalizePaidOrder()}
                   type="button"
                 >
-                  {paymentState === "sending" ? "Processing & Dispatching..." : `Pay ${formatPrice(totalInr)} · Dispatch to Kitchen`}
+                  {paymentState === "sending" ? "Verifying & Transmitting..." : `Submit Paid Order (${formatPrice(totalInr)})`}
                 </button>
                 <button
                   className="order-panel__secondary"
@@ -384,4 +443,5 @@ async function generatePaymentSignatureClient(transactionId: string, totalInr: n
       </section>
     </div>
   );
-}
+}
+

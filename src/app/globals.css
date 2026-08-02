@@ -2584,5 +2584,152 @@ button:focus-visible {
   color: #ef4444;
 }
 
+/* Real UPI & QR Code Gateway Styling */
+.payment-upi-box {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid rgba(216, 177, 91, 0.3);
+  border-radius: 16px;
+  padding: 18px;
+}
+
+.upi-qr-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+.upi-qr-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 12px;
+  background: #ffffff;
+  border-radius: 16px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+}
+
+.upi-qr-img {
+  width: 180px;
+  height: 180px;
+  border-radius: 8px;
+}
+
+.upi-qr-amount {
+  margin-top: 8px;
+  font-size: 0.88rem;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.upi-vpa-details {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+}
+
+.upi-vpa-label {
+  font-size: 0.74rem;
+  color: #94a3b8;
+  text-transform: uppercase;
+}
+
+.upi-vpa-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.upi-vpa-code {
+  font-family: monospace;
+  font-size: 1.05rem;
+  color: var(--gold-strong, #f1d189);
+  background: rgba(216, 177, 91, 0.12);
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(216, 177, 91, 0.3);
+}
+
+.upi-copy-btn {
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.upi-copy-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.upi-merchant-name {
+  font-size: 0.78rem;
+  color: #64748b;
+}
+
+.upi-app-launcher-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #16a34a, #15803d);
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 0.9rem;
+  text-decoration: none;
+  box-shadow: 0 4px 15px rgba(22, 163, 74, 0.3);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.upi-app-launcher-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(22, 163, 74, 0.4);
+}
+
+.upi-utr-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 12px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.12);
+}
+
+.upi-utr-field label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.84rem;
+  color: #cbd5e1;
+  font-weight: 600;
+}
+
+.upi-utr-field input {
+  height: 44px;
+  padding: 0 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(216, 177, 91, 0.4);
+  background: rgba(2, 6, 23, 0.8);
+  color: #fff;
+  font-size: 1rem;
+  letter-spacing: 0.08em;
+  font-family: monospace;
+}
+
+.utr-confirmation {
+  margin: 6px 0 0;
+  font-size: 0.8rem;
+  color: #34d399;
+}
+
+
 
 

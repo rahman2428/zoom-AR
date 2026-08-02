@@ -87,6 +87,8 @@ function generateOrdersCSV(orders: RestaurantOrder[]): string {
     "Items Summary",
     "Total Paid (INR)",
     "Payment Method",
+    "UTR Ref No",
+    "Payee VPA",
     "Payment Status",
     "Order Status"
   ];
@@ -110,6 +112,8 @@ function generateOrdersCSV(orders: RestaurantOrder[]): string {
       `"${itemsSummary.replace(/"/g, '""')}"`,
       o.totalInr,
       `"${(o.paymentMethod || "upi").toUpperCase()}"`,
+      `"${(o.utrNumber || "N/A").replace(/"/g, '""')}"`,
+      `"${(o.payeeUpi || "8603412912@sbi").replace(/"/g, '""')}"`,
       `"${(o.paymentStatus || "paid").toUpperCase()}"`,
       `"${o.status.toUpperCase()}"`
     ];
@@ -273,6 +277,8 @@ interface IncomingOrderPayload {
   totalInr?: number;
   paymentStatus?: string;
   paymentMethod?: PaymentMethod;
+  utrNumber?: string;
+  payeeUpi?: string;
   transactionId?: string;
   paymentTimestamp?: number;
   paymentSignature?: string;
@@ -478,6 +484,8 @@ export async function POST(request: Request) {
     status: "new",
     paymentStatus: "paid",
     paymentMethod: order.paymentMethod ?? "upi",
+    utrNumber: sanitizeInput(order.utrNumber, 30) || undefined,
+    payeeUpi: sanitizeInput(order.payeeUpi, 50) || "8603412912@sbi",
     createdAt: new Date().toISOString()
   };
 
