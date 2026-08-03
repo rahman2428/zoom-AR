@@ -413,34 +413,37 @@ export function MenuExperience({ menu }: MenuExperienceProps) {
         </span>
       </section>
 
-      <section className="experience-stage">
-        {hasSearchResults ? (
-          <RenderStage
-            ref={stageRef}
-            capabilities={capabilities}
-            currentIndex={currentIndex}
-            dish={currentDish}
-            engine={engine}
-            onNext={() => cycleDish(1)}
-            onPrevious={() => cycleDish(-1)}
-            preloadDishes={preloadDishes}
-            totalCount={filteredDishes.length}
-          />
-        ) : (
-          <div className="search-empty glass-panel">
-            <strong>{`No dish matched "${searchInput.trim()}"`}</strong>
-            <p>Try a broader keyword like burger, pizza, veg, or dessert.</p>
-            <button
-              className="search-empty__action"
-              onClick={() => {
-                setSearchInput("");
-              }}
-              type="button"
-            >
-              Clear Search
-            </button>
-          </div>
-        )}
+      {/* Main Experience Layout (Responsive Split Grid on Desktop) */}
+      <div className="experience-main-layout">
+        <section className="experience-stage">
+          {hasSearchResults ? (
+            <RenderStage
+              ref={stageRef}
+              capabilities={capabilities}
+              currentIndex={currentIndex}
+              dish={currentDish}
+              engine={engine}
+              onNext={() => cycleDish(1)}
+              onPrevious={() => cycleDish(-1)}
+              preloadDishes={preloadDishes}
+              totalCount={filteredDishes.length}
+            />
+          ) : (
+            <div className="search-empty glass-panel">
+              <strong>{`No dish matched "${searchInput.trim()}"`}</strong>
+              <p>Try a broader keyword like burger, pizza, veg, or dessert.</p>
+              <button
+                className="search-empty__action"
+                onClick={() => {
+                  setSearchInput("");
+                }}
+                type="button"
+              >
+                Clear Search
+              </button>
+            </div>
+          )}
+        </section>
 
         <AnimatePresence mode="wait">
           <motion.article
@@ -453,7 +456,9 @@ export function MenuExperience({ menu }: MenuExperienceProps) {
           >
             <div className="dish-summary__header">
               <div>
-                <span className="dish-summary__badge">
+                <span
+                  className={`dish-summary__badge dish-summary__badge--${currentDish.category}`}
+                >
                   {currentDish.category === "veg"
                     ? "Pure Vegetarian"
                     : currentDish.category === "non-veg"
@@ -469,18 +474,18 @@ export function MenuExperience({ menu }: MenuExperienceProps) {
             <p className="dish-summary__description">{currentDish.description}</p>
 
             <div className="dish-summary__meta">
-              <div>
-                <span>Calories</span>
-                <strong>{currentDish.calories} kcal</strong>
+              <div className="meta-item">
+                <span className="meta-label">Calories</span>
+                <strong className="meta-value">{currentDish.calories} kcal</strong>
               </div>
-              <div>
-                <span>Type</span>
-                <strong>{categoryMeta.label}</strong>
+              <div className="meta-item">
+                <span className="meta-label">Category</span>
+                <strong className="meta-value">{categoryMeta.label}</strong>
               </div>
             </div>
 
             <div className="dish-summary__plate-pricing">
-              <span className="dish-summary__plate-pricing-label">Portion Size & Add to Order</span>
+              <span className="dish-summary__plate-pricing-label">Select Portion & Add to Order</span>
               <div className="dish-summary__portion-selector">
                 <button
                   type="button"
@@ -506,50 +511,58 @@ export function MenuExperience({ menu }: MenuExperienceProps) {
               </button>
             </div>
 
-            <p className="dish-summary__ingredients">{currentDish.ingredients.join(" | ")}</p>
+            <p className="dish-summary__ingredients">
+              <strong>Ingredients: </strong>
+              {currentDish.ingredients.join(" · ")}
+            </p>
             <p className="dish-summary__status">
               {capabilityCopy} | {engine.headline}
             </p>
           </motion.article>
         </AnimatePresence>
-      </section>
+      </div>
 
-      {/* Cart Addition Toast Popup */}
+      {/* Cart Addition Toast Popup (Fixed at top) */}
       <AnimatePresence>
         {cartToast ? (
           <motion.div
             className="cart-add-toast"
-            initial={{ opacity: 0, y: 30, scale: 0.9 }}
+            initial={{ opacity: 0, y: -20, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 20, scale: 0.9 }}
+            exit={{ opacity: 0, y: -20, scale: 0.95 }}
             transition={{ type: "spring", stiffness: 400, damping: 25 }}
-            onClick={() => setOrderPanelOpen(true)}
+            onClick={handleOpenOrderPanel}
           >
-            <span>{cartToast.message}</span>
-            <strong className="toast-checkout-link">View Cart & Checkout →</strong>
+            <span className="toast-icon">🛒</span>
+            <div className="toast-content">
+              <span>{cartToast.message}</span>
+              <strong className="toast-checkout-link">View Cart & Checkout →</strong>
+            </div>
           </motion.div>
         ) : null}
       </AnimatePresence>
 
       <footer className="experience-footer">
-        <button
-          className="experience-footer__launch"
-          disabled={!canOpenArView || launchState === "launching"}
-          onClick={() => {
-            void launchPrimaryExperience();
-          }}
-          type="button"
-        >
-          {arButtonLabel}
-        </button>
-        <button
-          className="experience-footer__order"
-          disabled={!hasSearchResults}
-          onClick={handleOpenOrderPanel}
-          type="button"
-        >
-          🛒 View Order Cart ({cartItems.reduce((acc, i) => acc + i.quantity, 0)})
-        </button>
+        <div className="experience-footer__actions">
+          <button
+            className="experience-footer__launch"
+            disabled={!canOpenArView || launchState === "launching"}
+            onClick={() => {
+              void launchPrimaryExperience();
+            }}
+            type="button"
+          >
+            {arButtonLabel}
+          </button>
+          <button
+            className="experience-footer__order"
+            disabled={!hasSearchResults}
+            onClick={handleOpenOrderPanel}
+            type="button"
+          >
+            🛒 View Cart ({cartItems.reduce((acc, i) => acc + i.quantity, 0)})
+          </button>
+        </div>
 
         <div className="experience-footer__quick-controls">
           <button
