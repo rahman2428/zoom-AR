@@ -42,6 +42,12 @@ const STATUS_CONFIG: Record<
 export function ActiveOrderBanner({ onOpenTracker }: ActiveOrderBannerProps) {
   const [activeOrder, setActiveOrder] = useState<RestaurantOrder | null>(null);
   const [dismissed, setDismissed] = useState(false);
+  const [toastAlert, setToastAlert] = useState<{
+    title: string;
+    message: string;
+    icon: string;
+    status: OrderStatus;
+  } | null>(null);
 
   const prevStatusRef = useRef<OrderStatus | null>(null);
 
@@ -68,14 +74,38 @@ export function ActiveOrderBanner({ onOpenTracker }: ActiveOrderBannerProps) {
             const newOrd = data.order;
             setActiveOrder(newOrd);
 
-            // Detect stage change and trigger audible alert sound + banner un-dismiss
+            // Detect kitchen stage transition (e.g., kitchen accepts order & starts prep)
             if (prevStatusRef.current !== null && prevStatusRef.current !== newOrd.status) {
               playStageSound(newOrd.status);
               setDismissed(false);
+
+              // Trigger prominent popup toast for kitchen acceptance
+              const cfg = STATUS_CONFIG[newOrd.status];
+              setToastAlert({
+                title: newOrd.status === "preparing" ? "Order Accepted!" : cfg.title,
+                message: cfg.subtitle,
+                icon: cfg.icon,
+                status: newOrd.status
+              });
+
+              // Auto-clear toast after 5 seconds
+              setTimeout(() => {
+                if (isMounted) setToastAlert(null);
+              }, 5000);
             } else if (prevStatusRef.current === null) {
-              // Initial load sound trigger if preparing or ready
+              // Initial load trigger sound & toast if order is already being prepared or ready
               if (newOrd.status === "preparing" || newOrd.status === "ready") {
                 playStageSound(newOrd.status);
+                const cfg = STATUS_CONFIG[newOrd.status];
+                setToastAlert({
+                  title: newOrd.status === "preparing" ? "Order Accepted!" : cfg.title,
+                  message: cfg.subtitle,
+                  icon: cfg.icon,
+                  status: newOrd.status
+                });
+                setTimeout(() => {
+                  if (isMounted) setToastAlert(null);
+                }, 5000);
               }
             }
 
@@ -99,9 +129,10 @@ export function ActiveOrderBanner({ onOpenTracker }: ActiveOrderBannerProps) {
     }
 
     void pollActiveOrder();
+    // Fast 2-second polling interval for real-time kitchen notifications
     const interval = setInterval(() => {
       void pollActiveOrder();
-    }, 4000);
+    }, 2000);
 
     return () => {
       isMounted = false;
@@ -109,72 +140,101 @@ export function ActiveOrderBanner({ onOpenTracker }: ActiveOrderBannerProps) {
     };
   }, []);
 
-  if (!activeOrder || dismissed) {
+  if (!activeOrder) {
     return null;
   }
 
   const cfg = STATUS_CONFIG[activeOrder.status];
 
   return (
-    <AnimatePresence>
-      <motion.aside
-        className="active-order-banner glass-panel"
-        initial={{ opacity: 0, y: -30, scale: 0.95 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        exit={{ opacity: 0, y: -20, scale: 0.95 }}
-        transition={{ type: "spring", stiffness: 350, damping: 25 }}
-      >
-        <div
-          className="active-order-banner__content"
-          onClick={() => {
-            const token = typeof window !== "undefined" ? localStorage.getItem("last_customer_token") || undefined : undefined;
-            onOpenTracker(activeOrder.orderId, token);
-          }}
-          role="button"
-          tabIndex={0}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === " ") {
-              const token = typeof window !== "undefined" ? localStorage.getItem("last_customer_token") || undefined : undefined;
-              onOpenTracker(activeOrder.orderId, token);
-            }
-          }}
-        >
-          <div className={`active-order-banner__icon ${cfg.badgeClass}`}>
-            <span>{cfg.icon}</span>
-            {activeOrder.status === "preparing" ? <span className="pulse-ring-sm" /> : null}
-          </div>
-
-          <div className="active-order-banner__info">
-            <div className="active-order-banner__top">
-              <span className="banner-tag">LIVE KITCHEN STATUS</span>
-              <strong className="banner-order-id">#{activeOrder.orderId}</strong>
-            </div>
-            <h4 className="banner-title">{cfg.title}</h4>
-            <p className="banner-subtitle">{cfg.subtitle}</p>
-          </div>
-
-          <button
-            className="active-order-banner__track-btn"
-            onClick={(e) => {
-              e.stopPropagation();
+    <>
+      {/* Prominent High-Visibility Order Accepted Toast Pop-up */}
+      <AnimatePresence>
+        {toastAlert ? (
+          <motion.div
+            className={`order-accepted-toast toast--${toastAlert.status}`}
+            initial={{ opacity: 0, y: -50, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -30, scale: 0.9 }}
+            transition={{ type: "spring", stiffness: 400, damping: 25 }}
+            onClick={() => {
               const token = typeof window !== "undefined" ? localStorage.getItem("last_customer_token") || undefined : undefined;
               onOpenTracker(activeOrder.orderId, token);
             }}
-            type="button"
           >
-            Track →
-          </button>
-        </div>
+            <span className="toast-icon">{toastAlert.icon}</span>
+            <div className="toast-body">
+              <strong>{toastAlert.title}</strong>
+              <p>{toastAlert.message}</p>
+            </div>
+            <span className="toast-action">View →</span>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
 
-        <button
-          className="active-order-banner__close"
-          aria-label="Dismiss notification"
-          onClick={() => setDismissed(true)}
-          type="button"
-        >
-          ✕
-        </button>
-      </motion.aside>
-    </AnimatePresence>
+      {/* Persistent Floating Mini Banner on Menu */}
+      <AnimatePresence>
+        {!dismissed ? (
+          <motion.aside
+            className="active-order-banner glass-panel"
+            initial={{ opacity: 0, y: -30, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -20, scale: 0.95 }}
+            transition={{ type: "spring", stiffness: 350, damping: 25 }}
+          >
+            <div
+              className="active-order-banner__content"
+              onClick={() => {
+                const token = typeof window !== "undefined" ? localStorage.getItem("last_customer_token") || undefined : undefined;
+                onOpenTracker(activeOrder.orderId, token);
+              }}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  const token = typeof window !== "undefined" ? localStorage.getItem("last_customer_token") || undefined : undefined;
+                  onOpenTracker(activeOrder.orderId, token);
+                }
+              }}
+            >
+              <div className={`active-order-banner__icon ${cfg.badgeClass}`}>
+                <span>{cfg.icon}</span>
+                {activeOrder.status === "preparing" ? <span className="pulse-ring-sm" /> : null}
+              </div>
+
+              <div className="active-order-banner__info">
+                <div className="active-order-banner__top">
+                  <span className="banner-tag">LIVE KITCHEN STATUS</span>
+                  <strong className="banner-order-id">#{activeOrder.orderId}</strong>
+                </div>
+                <h4 className="banner-title">{cfg.title}</h4>
+                <p className="banner-subtitle">{cfg.subtitle}</p>
+              </div>
+
+              <button
+                className="active-order-banner__track-btn"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const token = typeof window !== "undefined" ? localStorage.getItem("last_customer_token") || undefined : undefined;
+                  onOpenTracker(activeOrder.orderId, token);
+                }}
+                type="button"
+              >
+                Track →
+              </button>
+            </div>
+
+            <button
+              className="active-order-banner__close"
+              aria-label="Dismiss notification"
+              onClick={() => setDismissed(true)}
+              type="button"
+            >
+              ✕
+            </button>
+          </motion.aside>
+        ) : null}
+      </AnimatePresence>
+    </>
   );
 }
