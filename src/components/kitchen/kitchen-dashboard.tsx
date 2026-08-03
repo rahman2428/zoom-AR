@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { formatPrice } from "@/lib/ar/assets";
 import type { OrderStatus, RestaurantOrder } from "@/lib/menu/types";
+import { playStageSound } from "@/lib/sounds";
 
 function playNewOrderChime() {
   try {
@@ -208,6 +209,9 @@ function mergeLocalOrders(existing: RestaurantOrder[], incoming: RestaurantOrder
       });
 
       if (res.ok) {
+        if (soundEnabled) {
+          playStageSound(nextStatus);
+        }
         setOrders((prev) => {
           const updated = prev.map((ord) => (ord.orderId === orderId ? { ...ord, status: nextStatus } : ord));
           if (typeof window !== "undefined") {

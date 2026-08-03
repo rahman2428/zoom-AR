@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { formatPrice } from "@/lib/ar/assets";
 import type { MenuDish, OrderItem, PaymentMethod, PlateSize, RestaurantOrder } from "@/lib/menu/types";
+import { playOrderPlacedSound } from "@/lib/sounds";
 
 interface OrderPanelProps {
   dish: MenuDish;
@@ -172,6 +173,7 @@ async function generatePaymentSignatureClient(transactionId: string, totalInr: n
           }
         }
       }
+      playOrderPlacedSound();
       setPaymentState("success");
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "The order could not be sent.");

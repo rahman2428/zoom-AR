@@ -48,6 +48,8 @@ function getStepIndex(status: OrderStatus) {
   }
 }
 
+import { playStageSound } from "@/lib/sounds";
+
 export function OrderTracker({ initialOrderId, initialToken, onClose }: OrderTrackerProps) {
   const [searchQuery, setSearchQuery] = useState(initialOrderId ?? "");
   const [sessionToken, setSessionToken] = useState(initialToken ?? "");
@@ -55,10 +57,12 @@ export function OrderTracker({ initialOrderId, initialToken, onClose }: OrderTra
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
 
-  const fetchStatus = useCallback(async (query: string, tokenOverride?: string) => {
+  const fetchStatus = useCallback(async (query: string, tokenOverride?: string, isBackgroundPoll = false) => {
     if (!query.trim()) return;
-    setLoading(true);
-    setErrorMsg("");
+    if (!isBackgroundPoll) {
+      setLoading(true);
+      setErrorMsg("");
+    }
 
     const currentToken =
       tokenOverride || sessionToken || (typeof window !== "undefined" ? localStorage.getItem("last_customer_token") || "" : "");
@@ -68,17 +72,23 @@ export function OrderTracker({ initialOrderId, initialToken, onClose }: OrderTra
         currentToken ? `&token=${encodeURIComponent(currentToken)}` : ""
       }`;
       const res = await fetch(url);
+
       if (res.ok) {
         const data = (await res.json()) as { order?: RestaurantOrder };
         if (data.order) {
-          setActiveOrder(data.order);
-          setLoading(false);
+          setActiveOrder((prev) => {
+            if (prev && prev.status !== data.order!.status) {
+              playStageSound(data.order!.status);
+            }
+            return data.order!;
+          });
+          if (!isBackgroundPoll) setLoading(false);
           return;
         }
       }
 
-      // If server cold-started or lost the order, check customer local history backup
-      if (res.status === 404 && typeof window !== "undefined") {
+      // Check customer local history backup for resilience against cold starts
+      if (typeof window !== "undefined") {
         try {
           const rawHistory = localStorage.getItem("zoom_ar_customer_orders_history");
           if (rawHistory) {
@@ -87,7 +97,7 @@ export function OrderTracker({ initialOrderId, initialToken, onClose }: OrderTra
               (o) => o.orderId.toLowerCase() === query.trim().toLowerCase()
             );
             if (matched) {
-              // Trigger auto-rehydration to restore order on server
+              // Trigger background rehydration on server
               void fetch("/api/orders", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -97,8 +107,13 @@ export function OrderTracker({ initialOrderId, initialToken, onClose }: OrderTra
                 })
               });
 
-              setActiveOrder(matched);
-              setLoading(false);
+              setActiveOrder((prev) => {
+                if (prev && prev.status !== matched.status) {
+                  playStageSound(matched.status);
+                }
+                return matched;
+              });
+              if (!isBackgroundPoll) setLoading(false);
               return;
             }
           }
@@ -107,38 +122,43 @@ export function OrderTracker({ initialOrderId, initialToken, onClose }: OrderTra
         }
       }
 
-      if (res.status === 403 || res.status === 401) {
-        setErrorMsg("Privacy Protection: Access restricted to authorized session holder.");
-      } else {
-        setErrorMsg(`No active order found for Order ID "${query}".`);
+      // Only set error and clear active order if user explicitly initiated manual search
+      if (!isBackgroundPoll) {
+        if (res.status === 403 || res.status === 401) {
+          setErrorMsg("Privacy Protection: Access restricted to authorized session holder.");
+        } else {
+          setErrorMsg(`No active order found for Order ID "${query}".`);
+        }
+        setActiveOrder(null);
       }
-      setActiveOrder(null);
     } catch {
-      setErrorMsg("Network error checking order status.");
+      if (!isBackgroundPoll) {
+        setErrorMsg("Network error checking order status.");
+      }
     } finally {
-      setLoading(false);
+      if (!isBackgroundPoll) setLoading(false);
     }
   }, [sessionToken]);
 
   useEffect(() => {
     if (initialOrderId) {
-      void fetchStatus(initialOrderId, initialToken);
+      void fetchStatus(initialOrderId, initialToken, false);
     } else if (typeof window !== "undefined") {
       const savedId = localStorage.getItem("last_order_id");
       const savedToken = localStorage.getItem("last_customer_token");
       if (savedId) {
         setSearchQuery(savedId);
         if (savedToken) setSessionToken(savedToken);
-        void fetchStatus(savedId, savedToken || undefined);
+        void fetchStatus(savedId, savedToken || undefined, false);
       }
     }
   }, [initialOrderId, initialToken, fetchStatus]);
 
-  // Polling active order status every 3 seconds
+  // Polling active order status every 3 seconds (resilient background poll)
   useEffect(() => {
     if (!activeOrder || activeOrder.status === "completed") return;
     const interval = setInterval(() => {
-      void fetchStatus(activeOrder.orderId);
+      void fetchStatus(activeOrder.orderId, undefined, true);
     }, 3000);
     return () => clearInterval(interval);
   }, [activeOrder, fetchStatus]);
