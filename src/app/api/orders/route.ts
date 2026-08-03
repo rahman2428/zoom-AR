@@ -260,7 +260,7 @@ function getCorsHeaders(request: Request) {
   };
 }
 
-// HMAC-SHA256 Payment Signature Generator & Verifier
+// HMAC-SHA256 Payment Signature Generator & Verifier (Supports Razorpay & Standard HMAC)
 function createPaymentSignature(transactionId: string, totalInr: number, timestamp: number): string {
   const payload = `${transactionId}:${totalInr}:${timestamp}`;
   return crypto.createHmac("sha256", PAYMENT_SECRET_KEY).update(payload).digest("hex");
@@ -270,13 +270,37 @@ function verifyPaymentSignature(
   transactionId?: string,
   totalInr?: number,
   timestamp?: number,
-  providedSignature?: string
+  providedSignature?: string,
+  gatewayOrderId?: string
 ): boolean {
-  if (!transactionId || typeof totalInr !== "number" || !timestamp || !providedSignature) {
+  if (!transactionId || typeof totalInr !== "number" || !providedSignature) {
     return false;
   }
-  // Max 30 min window
-  if (Math.abs(Date.now() - timestamp) > 30 * 60 * 1000) {
+
+  // 1. Verify Razorpay Gateway Signature if gatewayOrderId and RAZORPAY_KEY_SECRET exist
+  const razorpaySecret = process.env.RAZORPAY_KEY_SECRET;
+  if (gatewayOrderId && razorpaySecret) {
+    try {
+      const payload = `${gatewayOrderId}|${transactionId}`;
+      const expectedRazorpaySig = crypto
+        .createHmac("sha256", razorpaySecret)
+        .update(payload)
+        .digest("hex");
+      if (
+        crypto.timingSafeEqual(
+          Buffer.from(expectedRazorpaySig, "utf8"),
+          Buffer.from(providedSignature, "utf8")
+        )
+      ) {
+        return true;
+      }
+    } catch {
+      // Fallback to standard HMAC verification below
+    }
+  }
+
+  // 2. Standard HMAC-SHA256 Signature Verification
+  if (!timestamp || Math.abs(Date.now() - timestamp) > 30 * 60 * 1000) {
     return false;
   }
   const expectedSignature = createPaymentSignature(transactionId, totalInr, timestamp);
@@ -373,6 +397,7 @@ interface IncomingOrderPayload {
   utrNumber?: string;
   payeeUpi?: string;
   transactionId?: string;
+  gatewayOrderId?: string;
   paymentTimestamp?: number;
   paymentSignature?: string;
 }
@@ -554,12 +579,13 @@ export async function POST(request: Request) {
     );
   }
 
-  // Cryptographic Payment Signature Verification (HMAC-SHA256)
+  // Cryptographic Payment Signature Verification (HMAC-SHA256 & Razorpay)
   const isPaymentVerified = verifyPaymentSignature(
     order.transactionId,
     order.totalInr,
     order.paymentTimestamp,
-    order.paymentSignature
+    order.paymentSignature,
+    order.gatewayOrderId
   );
 
   if (!isPaymentVerified) {

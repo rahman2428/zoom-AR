@@ -2973,6 +2973,28 @@ button:focus-visible {
   white-space: nowrap;
 }
 
+.order-panel__razorpay-auto-btn {
+  width: 100%;
+  padding: 14px 20px;
+  border-radius: 12px;
+  border: 1px solid rgba(59, 130, 246, 0.6);
+  background: linear-gradient(135deg, #1d4ed8, #2563eb);
+  color: #ffffff;
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 8px 24px rgba(37, 99, 235, 0.35);
+  transition: all 0.25s ease;
+  margin-bottom: 10px;
+}
+
+.order-panel__razorpay-auto-btn:hover {
+  background: linear-gradient(135deg, #2563eb, #3b82f6);
+  border-color: rgba(147, 197, 253, 0.8);
+  box-shadow: 0 12px 30px rgba(37, 99, 235, 0.5);
+  transform: translateY(-1px);
+}
+
 
 
 

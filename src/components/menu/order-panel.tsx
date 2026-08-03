@@ -181,6 +181,160 @@ async function generatePaymentSignatureClient(transactionId: string, totalInr: n
     }
   }
 
+  async function handleRazorpayCheckout() {
+    setPaymentState("sending");
+    setErrorMessage("");
+
+    const item: OrderItem = {
+      dishId: dish.id,
+      dishName: dish.name,
+      plateSize,
+      quantity,
+      unitPriceInr
+    };
+
+    try {
+      // 1. Request Razorpay Order ID from Server
+      const res = await fetch("/api/payments/create-order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ totalInr })
+      });
+
+      const data = (await res.json()) as {
+        isConfigured?: boolean;
+        gatewayOrderId?: string;
+        amount?: number;
+        currency?: string;
+        keyId?: string;
+        error?: string;
+        message?: string;
+      };
+
+      if (!res.ok || !data) {
+        throw new Error(data?.error || "Failed to create payment order.");
+      }
+
+      // If Razorpay keys are not configured yet in Vercel env, inform user clearly
+      if (!data.isConfigured || !data.keyId || !data.gatewayOrderId) {
+        setErrorMessage("Razorpay Keys Ready: Add RAZORPAY_KEY_ID & RAZORPAY_KEY_SECRET to your environment. Falling back to standard check...");
+        setPaymentState("payment");
+        return;
+      }
+
+      // 2. Open Official Razorpay Checkout Modal
+      const options = {
+        key: data.keyId,
+        amount: data.amount,
+        currency: data.currency || "INR",
+        name: "Zoom AR Restaurant",
+        description: `Order at Table ${formattedLocation}`,
+        order_id: data.gatewayOrderId,
+        prefill: {
+          name: customerName,
+          contact: mobileNumber
+        },
+        theme: { color: "#d8b15b" },
+        handler: async function (response: {
+          razorpay_payment_id: string;
+          razorpay_order_id: string;
+          razorpay_signature: string;
+        }) {
+          try {
+            const verifyRes = await fetch("/api/orders", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                tableNumber: cleanTable,
+                chairCode: cleanChair || undefined,
+                location: formattedLocation,
+                customerName: customerName.trim(),
+                mobileNumber: mobileNumber.trim(),
+                items: [item],
+                totalInr,
+                paymentStatus: "paid",
+                paymentMethod: "upi",
+                transactionId: response.razorpay_payment_id,
+                gatewayOrderId: response.razorpay_order_id,
+                paymentSignature: response.razorpay_signature,
+                paymentTimestamp: Date.now()
+              })
+            });
+
+            const verifyPayload = (await verifyRes.json().catch(() => null)) as {
+              orderId?: string;
+              customerToken?: string;
+              order?: RestaurantOrder;
+              error?: string;
+            } | null;
+
+            if (!verifyRes.ok) {
+              throw new Error(verifyPayload?.error ?? "Payment verification failed.");
+            }
+
+            const generatedId = verifyPayload?.orderId ?? "";
+            const generatedToken = verifyPayload?.customerToken ?? "";
+            setConfirmedOrderId(generatedId);
+            setConfirmedToken(generatedToken);
+
+            if (generatedId && typeof window !== "undefined") {
+              localStorage.setItem("last_order_id", generatedId);
+              if (generatedToken) {
+                localStorage.setItem("last_customer_token", generatedToken);
+              }
+              if (verifyPayload?.order) {
+                try {
+                  const rawHistory = localStorage.getItem("zoom_ar_customer_orders_history");
+                  const history = rawHistory ? JSON.parse(rawHistory) : [];
+                  const updatedHistory = Array.isArray(history) ? [verifyPayload.order, ...history] : [verifyPayload.order];
+                  localStorage.setItem("zoom_ar_customer_orders_history", JSON.stringify(updatedHistory));
+                } catch {
+                  // ignore
+                }
+              }
+            }
+            playOrderPlacedSound();
+            setPaymentState("success");
+          } catch (err) {
+            setErrorMessage(err instanceof Error ? err.message : "Payment verification failed.");
+            setPaymentState("error");
+          }
+        },
+        modal: {
+          ondismiss: function () {
+            setPaymentState("payment");
+          }
+        }
+      };
+
+      // Dynamically load Razorpay SDK script if not present
+      if (typeof window !== "undefined") {
+        const win = window as unknown as { Razorpay?: new (opts: unknown) => { open: () => void } };
+        if (win.Razorpay) {
+          const rzp = new win.Razorpay(options);
+          rzp.open();
+        } else {
+          const script = document.createElement("script");
+          script.src = "https://checkout.razorpay.com/v1/checkout.js";
+          script.onload = () => {
+            if (win.Razorpay) {
+              const rzp = new win.Razorpay(options);
+              rzp.open();
+            }
+          };
+          script.onerror = () => {
+            setErrorMessage("Failed to load Razorpay Payment Gateway script.");
+            setPaymentState("error");
+          };
+          document.body.appendChild(script);
+        }
+      }
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : "Razorpay payment error.");
+      setPaymentState("error");
+    }
+  }
+
   return (
     <div className="order-panel__backdrop" role="presentation" onMouseDown={onClose}>
       <section className="order-panel glass-panel" role="dialog" aria-modal="true" aria-labelledby="order-title" onMouseDown={(event) => event.stopPropagation()}>
@@ -432,6 +586,15 @@ async function generatePaymentSignatureClient(transactionId: string, totalInr: n
                 </div>
 
                 {errorMessage ? <p className="order-panel__error">{errorMessage}</p> : null}
+
+                <button
+                  className="order-panel__razorpay-auto-btn"
+                  disabled={paymentState === "sending"}
+                  onClick={() => void handleRazorpayCheckout()}
+                  type="button"
+                >
+                  ⚡ Auto-Verify via Razorpay Gateway (Instant)
+                </button>
 
                 <button
                   className="order-panel__primary"
