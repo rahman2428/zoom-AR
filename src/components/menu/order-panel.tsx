@@ -2,26 +2,32 @@
 
 import { useState } from "react";
 import { formatPrice } from "@/lib/ar/assets";
-import type { MenuDish, OrderItem, PaymentMethod, PlateSize, RestaurantOrder } from "@/lib/menu/types";
+import type { CartItem, OrderItem, PaymentMethod, RestaurantOrder } from "@/lib/menu/types";
 import { playOrderPlacedSound } from "@/lib/sounds";
 
 interface OrderPanelProps {
-  dish: MenuDish;
+  cartItems: CartItem[];
   onClose: () => void;
+  onUpdateQuantity: (cartItemId: string, delta: number) => void;
+  onRemoveItem: (cartItemId: string) => void;
+  onAddMoreItems: () => void;
+  onClearCart: () => void;
   onTrackOrder?: (orderId: string, customerToken?: string) => void;
 }
 
-function halfPlatePrice(priceInr: number) {
-  return Math.max(120, Math.round((priceInr * 0.62) / 10) * 10);
-}
-
-export function OrderPanel({ dish, onClose, onTrackOrder }: OrderPanelProps) {
+export function OrderPanel({
+  cartItems,
+  onClose,
+  onUpdateQuantity,
+  onRemoveItem,
+  onAddMoreItems,
+  onClearCart,
+  onTrackOrder
+}: OrderPanelProps) {
   const [tableNumber, setTableNumber] = useState("");
   const [chairCode, setChairCode] = useState("");
   const [customerName, setCustomerName] = useState("");
   const [mobileNumber, setMobileNumber] = useState("");
-  const [plateSize, setPlateSize] = useState<PlateSize>("full");
-  const [quantity, setQuantity] = useState(1);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("upi");
   const [utrNumber, setUtrNumber] = useState("");
   const [copiedUpi, setCopiedUpi] = useState(false);
@@ -41,10 +47,13 @@ export function OrderPanel({ dish, onClose, onTrackOrder }: OrderPanelProps) {
   const cleanChair = chairCode.trim().toUpperCase();
   const formattedLocation = cleanTable ? (cleanChair ? `${cleanTable}${cleanChair}` : cleanTable) : "";
 
-  const unitPriceInr = plateSize === "full" ? dish.priceInr : halfPlatePrice(dish.priceInr);
-  const totalInr = unitPriceInr * quantity;
+  const totalInr = cartItems.reduce((sum, item) => sum + item.unitPriceInr * item.quantity, 0);
 
-  const upiIntentUrl = `upi://pay?pa=${MERCHANT_UPI_ID}&pn=${encodeURIComponent(MERCHANT_NAME)}&am=${totalInr}&cu=INR&tn=${encodeURIComponent(`ZoomAR_${dish.name.replace(/\s+/g, "_")}`)}`;
+  const itemsSummaryText = cartItems
+    .map((item) => `${item.quantity}x ${item.dishName} (${item.plateSize})`)
+    .join(", ");
+
+  const upiIntentUrl = `upi://pay?pa=${MERCHANT_UPI_ID}&pn=${encodeURIComponent(MERCHANT_NAME)}&am=${totalInr}&cu=INR&tn=${encodeURIComponent(`ZoomAR_${cartItems.length}_items`)}`;
   const upiQrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(upiIntentUrl)}`;
 
   function handleCopyUpi() {
@@ -58,6 +67,10 @@ export function OrderPanel({ dish, onClose, onTrackOrder }: OrderPanelProps) {
   }
 
   function validateDetails() {
+    if (cartItems.length === 0) {
+      setErrorMessage("Your order cart is empty. Please add at least one food item.");
+      return false;
+    }
     if (!cleanTable) {
       setErrorMessage("Please enter a valid Table Number.");
       return false;
@@ -75,25 +88,29 @@ export function OrderPanel({ dish, onClose, onTrackOrder }: OrderPanelProps) {
     return true;
   }
 
-async function generatePaymentSignatureClient(transactionId: string, totalInr: number, timestamp: number): Promise<string> {
-  const secretKey = "CINEMATIC_AR_REST_PAY_SECRET_9981273";
-  const encoder = new TextEncoder();
-  const keyData = encoder.encode(secretKey);
-  const messageData = encoder.encode(`${transactionId}:${totalInr}:${timestamp}`);
+  async function generatePaymentSignatureClient(
+    transactionId: string,
+    amountInr: number,
+    timestamp: number
+  ): Promise<string> {
+    const secretKey = "CINEMATIC_AR_REST_PAY_SECRET_9981273";
+    const encoder = new TextEncoder();
+    const keyData = encoder.encode(secretKey);
+    const messageData = encoder.encode(`${transactionId}:${amountInr}:${timestamp}`);
 
-  const cryptoKey = await window.crypto.subtle.importKey(
-    "raw",
-    keyData,
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"]
-  );
+    const cryptoKey = await window.crypto.subtle.importKey(
+      "raw",
+      keyData,
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["sign"]
+    );
 
-  const signatureBuffer = await window.crypto.subtle.sign("HMAC", cryptoKey, messageData);
-  return Array.from(new Uint8Array(signatureBuffer))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
+    const signatureBuffer = await window.crypto.subtle.sign("HMAC", cryptoKey, messageData);
+    return Array.from(new Uint8Array(signatureBuffer))
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
+  }
 
   async function finalizePaidOrder() {
     if (paymentMethod === "upi") {
@@ -107,13 +124,13 @@ async function generatePaymentSignatureClient(transactionId: string, totalInr: n
     setPaymentState("sending");
     setErrorMessage("");
 
-    const item: OrderItem = {
-      dishId: dish.id,
-      dishName: dish.name,
-      plateSize,
-      quantity,
-      unitPriceInr
-    };
+    const orderItems: OrderItem[] = cartItems.map((item) => ({
+      dishId: item.dishId,
+      dishName: item.dishName,
+      plateSize: item.plateSize,
+      quantity: item.quantity,
+      unitPriceInr: item.unitPriceInr
+    }));
 
     try {
       const transactionId = `TXN-${Date.now().toString(36).toUpperCase()}${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
@@ -129,7 +146,7 @@ async function generatePaymentSignatureClient(transactionId: string, totalInr: n
           location: formattedLocation,
           customerName: customerName.trim(),
           mobileNumber: mobileNumber.trim(),
-          items: [item],
+          items: orderItems,
           totalInr,
           paymentStatus: "paid",
           paymentMethod,
@@ -173,6 +190,8 @@ async function generatePaymentSignatureClient(transactionId: string, totalInr: n
           }
         }
       }
+
+      onClearCart();
       playOrderPlacedSound();
       setPaymentState("success");
     } catch (error) {
@@ -185,13 +204,13 @@ async function generatePaymentSignatureClient(transactionId: string, totalInr: n
     setPaymentState("sending");
     setErrorMessage("");
 
-    const item: OrderItem = {
-      dishId: dish.id,
-      dishName: dish.name,
-      plateSize,
-      quantity,
-      unitPriceInr
-    };
+    const orderItems: OrderItem[] = cartItems.map((item) => ({
+      dishId: item.dishId,
+      dishName: item.dishName,
+      plateSize: item.plateSize,
+      quantity: item.quantity,
+      unitPriceInr: item.unitPriceInr
+    }));
 
     try {
       // 1. Request Razorpay Order ID from Server
@@ -228,7 +247,7 @@ async function generatePaymentSignatureClient(transactionId: string, totalInr: n
         amount: data.amount,
         currency: data.currency || "INR",
         name: "Zoom AR Restaurant",
-        description: `Order at Table ${formattedLocation}`,
+        description: `Table ${formattedLocation} (${cartItems.length} Food Items)`,
         order_id: data.gatewayOrderId,
         prefill: {
           name: customerName,
@@ -250,7 +269,7 @@ async function generatePaymentSignatureClient(transactionId: string, totalInr: n
                 location: formattedLocation,
                 customerName: customerName.trim(),
                 mobileNumber: mobileNumber.trim(),
-                items: [item],
+                items: orderItems,
                 totalInr,
                 paymentStatus: "paid",
                 paymentMethod: "upi",
@@ -293,6 +312,7 @@ async function generatePaymentSignatureClient(transactionId: string, totalInr: n
                 }
               }
             }
+            onClearCart();
             playOrderPlacedSound();
             setPaymentState("success");
           } catch (err) {
@@ -337,21 +357,32 @@ async function generatePaymentSignatureClient(transactionId: string, totalInr: n
 
   return (
     <div className="order-panel__backdrop" role="presentation" onMouseDown={onClose}>
-      <section className="order-panel glass-panel" role="dialog" aria-modal="true" aria-labelledby="order-title" onMouseDown={(event) => event.stopPropagation()}>
+      <section
+        className="order-panel glass-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="order-title"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
         <div className="order-panel__header">
           <div>
             <span className="eyebrow">Table service</span>
-            <h2 id="order-title">Build your order</h2>
+            <h2 id="order-title">Your Food Order Cart</h2>
           </div>
-          <button className="order-panel__close" aria-label="Close order" onClick={onClose} type="button">Close</button>
+          <button className="order-panel__close" aria-label="Close order" onClick={onClose} type="button">
+            Close
+          </button>
         </div>
 
         {paymentState === "success" ? (
           <div className="order-panel__success">
             <span className="order-panel__success-mark">OK</span>
-            <h3>Order sent to the kitchen</h3>
+            <h3>Order sent to the kitchen!</h3>
             <p>
               Order <strong>#{confirmedOrderId}</strong> for Table <strong>{formattedLocation}</strong> has been paid and transmitted to the kitchen.
+            </p>
+            <p className="order-items-summary-tag">
+              Items: <strong>{itemsSummaryText}</strong>
             </p>
             {utrNumber ? (
               <p className="utr-confirmation">
@@ -370,254 +401,318 @@ async function generatePaymentSignatureClient(transactionId: string, totalInr: n
                 📍 Track Live Preparation Status
               </button>
             ) : null}
-            <button className="order-panel__secondary" onClick={onClose} type="button">Close</button>
+            <button className="order-panel__secondary" onClick={onClose} type="button">
+              Close
+            </button>
           </div>
         ) : (
           <>
-            <div className="order-panel__dish">
-              <div>
-                <strong>{dish.name}</strong>
-                <span>{formatPrice(unitPriceInr)} each</span>
+            {/* Multi-Item Food Order List */}
+            <div className="cart-items-container">
+              <div className="cart-items-top">
+                <span className="cart-items-title">
+                  🛒 Items in Order ({cartItems.length})
+                </span>
+                <button
+                  type="button"
+                  className="cart-add-more-btn"
+                  onClick={onAddMoreItems}
+                >
+                  ➕ Add More Dishes
+                </button>
               </div>
-              <div className="order-panel__quantity" aria-label="Quantity">
-                <button aria-label="Decrease quantity" disabled={quantity === 1} onClick={() => setQuantity((value) => value - 1)} type="button">-</button>
-                <strong>{quantity}</strong>
-                <button aria-label="Increase quantity" onClick={() => setQuantity((value) => value + 1)} type="button">+</button>
-              </div>
+
+              {cartItems.length === 0 ? (
+                <div className="cart-empty-box">
+                  <p>Your order cart is currently empty.</p>
+                  <button
+                    type="button"
+                    className="order-panel__primary"
+                    onClick={onAddMoreItems}
+                  >
+                    Browse Menu & Add Dishes
+                  </button>
+                </div>
+              ) : (
+                <div className="cart-items-list">
+                  {cartItems.map((item) => (
+                    <div key={item.cartItemId} className="cart-item-card">
+                      <div className="cart-item-main">
+                        <div>
+                          <strong className="cart-item-name">{item.dishName}</strong>
+                          <span className="cart-item-portion">
+                            {item.plateSize === "full" ? "Full Plate" : "Half Plate"} · ₹{item.unitPriceInr} each
+                          </span>
+                        </div>
+                        <strong className="cart-item-total">₹{item.unitPriceInr * item.quantity}</strong>
+                      </div>
+
+                      <div className="cart-item-row-footer">
+                        <div className="cart-qty-stepper">
+                          <button
+                            type="button"
+                            aria-label="Decrease quantity"
+                            onClick={() => onUpdateQuantity(item.cartItemId, -1)}
+                          >
+                            -
+                          </button>
+                          <strong>{item.quantity}</strong>
+                          <button
+                            type="button"
+                            aria-label="Increase quantity"
+                            onClick={() => onUpdateQuantity(item.cartItemId, 1)}
+                          >
+                            +
+                          </button>
+                        </div>
+
+                        <button
+                          type="button"
+                          className="cart-remove-btn"
+                          onClick={() => onRemoveItem(item.cartItemId)}
+                        >
+                          🗑 Remove
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+
+                  <div className="cart-subtotal-bar">
+                    <span>Order Subtotal ({cartItems.reduce((acc, i) => acc + i.quantity, 0)} plates):</span>
+                    <strong className="cart-subtotal-price">{formatPrice(totalInr)}</strong>
+                  </div>
+                </div>
+              )}
             </div>
 
-            {paymentState === "details" ? (
-              <form className="order-panel__form" onSubmit={(event) => { event.preventDefault(); if (validateDetails()) setPaymentState("payment"); }}>
-                <div className="order-panel__location-fields">
-                  <div className="order-panel__grid-2">
-                    <label>
-                      Table No. <span className="required-star">*</span>
-                      <input
-                        placeholder="e.g. 5"
-                        value={tableNumber}
-                        onChange={(event) => setTableNumber(event.target.value)}
-                        required
-                      />
-                    </label>
-                    <label>
-                      Chair Code <span className="optional-tag">(optional)</span>
-                      <input
-                        placeholder="e.g. A"
-                        value={chairCode}
-                        onChange={(event) => setChairCode(event.target.value)}
-                        maxLength={4}
-                      />
-                    </label>
-                  </div>
-                  <div className="order-panel__location-preview">
-                    <span>Formatted Location:</span>
-                    <strong className="order-panel__location-tag">
-                      {formattedLocation ? formattedLocation : "Enter table number..."}
-                    </strong>
-                  </div>
-                </div>
-
-                <label>
-                  Customer Name <span className="required-star">*</span>
-                  <input
-                    autoComplete="name"
-                    placeholder="e.g. Rahul Sharma"
-                    value={customerName}
-                    onChange={(event) => setCustomerName(event.target.value)}
-                    required
-                  />
-                </label>
-                <label>
-                  Mobile Number <span className="required-star">*</span>
-                  <input
-                    autoComplete="tel"
-                    inputMode="tel"
-                    placeholder="e.g. +91 9876543210"
-                    value={mobileNumber}
-                    onChange={(event) => setMobileNumber(event.target.value)}
-                    required
-                  />
-                </label>
-                <fieldset>
-                  <legend>Plate Portion Size</legend>
-                  <div className="order-panel__segmented">
-                    {(["half", "full"] as PlateSize[]).map((size) => (
-                      <button
-                        className={plateSize === size ? "is-selected" : ""}
-                        key={size}
-                        onClick={() => setPlateSize(size)}
-                        type="button"
-                      >
-                        {size} plate ({size === "full" ? formatPrice(dish.priceInr) : formatPrice(halfPlatePrice(dish.priceInr))})
-                      </button>
-                    ))}
-                  </div>
-                </fieldset>
-
-                {errorMessage ? <p className="order-panel__error">{errorMessage}</p> : null}
-                <button className="order-panel__primary" type="submit">
-                  Continue to payment · {formatPrice(totalInr)}
-                </button>
-              </form>
-            ) : (
-              <div className="order-panel__payment">
-                <span className="eyebrow">Checkout & UPI Payment Gate</span>
-                <h3>Confirm payment of {formatPrice(totalInr)}</h3>
-                <p>Location: <strong>Table {formattedLocation}</strong> · {customerName}</p>
-
-                <fieldset className="order-panel__methods-fieldset">
-                  <legend>Select Payment Method</legend>
-                  <div className="order-panel__payment-methods">
-                    {(
-                      [
-                        { id: "upi", label: "Instant UPI / QR" },
-                        { id: "card", label: "Debit/Credit Card" },
-                        { id: "netbanking", label: "NetBanking" },
-                        { id: "desk", label: "Pay at Desk" }
-                      ] as const
-                    ).map((method) => (
-                      <button
-                        className={paymentMethod === method.id ? "is-selected" : ""}
-                        key={method.id}
-                        onClick={() => setPaymentMethod(method.id)}
-                        type="button"
-                      >
-                        {method.label}
-                      </button>
-                    ))}
-                  </div>
-                </fieldset>
-
-                <div className="order-panel__payment-details">
-                  {paymentMethod === "upi" ? (
-                    <div className="payment-upi-box">
-                      <div className="upi-qr-card">
-                        <div className="upi-qr-wrapper">
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={upiQrCodeUrl} alt="Scan to Pay via UPI" className="upi-qr-img" width={180} height={180} />
-                          <span className="upi-qr-amount">Scan & Pay {formatPrice(totalInr)}</span>
-                        </div>
-
-                        <div className="upi-vpa-details">
-                          <span className="upi-vpa-label">Payee Merchant VPA:</span>
-                          <div className="upi-vpa-row">
-                            <strong className="upi-vpa-code">{MERCHANT_UPI_ID}</strong>
-                            <button type="button" className="upi-copy-btn" onClick={handleCopyUpi}>
-                              {copiedUpi ? "✓ Copied" : "📋 Copy ID"}
-                            </button>
-                          </div>
-                          <span className="upi-merchant-name">Name: {MERCHANT_NAME}</span>
-                        </div>
-                      </div>
-
-                      <a href={upiIntentUrl} className="upi-app-launcher-btn">
-                        📱 Open UPI App (GPay / PhonePe / Paytm / BHIM)
-                      </a>
-
-                      <div className="upi-utr-field">
-                        <label>
-                          Step 2: Enter 12-Digit Bank UTR / Ref No. <span className="required-star">*</span>
-                          <input
-                            placeholder="e.g. 423819283741 (from app receipt)"
-                            value={utrNumber}
-                            onChange={(e) => setUtrNumber(e.target.value.replace(/[^0-9A-Za-z]/g, ""))}
-                            maxLength={18}
-                            required
-                          />
-                        </label>
-                        <span className="payment-hint">Enter your 12-digit transaction ID after paying so the kitchen can confirm credit.</span>
-                      </div>
-                    </div>
-                  ) : paymentMethod === "card" ? (
-                    <div className="payment-method-box">
+            {cartItems.length > 0 ? (
+              paymentState === "details" ? (
+                <form
+                  className="order-panel__form"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    if (validateDetails()) setPaymentState("payment");
+                  }}
+                >
+                  <div className="order-panel__location-fields">
+                    <div className="order-panel__grid-2">
                       <label>
-                        Card Number
+                        Table No. <span className="required-star">*</span>
                         <input
-                          placeholder="4532 •••• •••• 8921"
-                          maxLength={19}
-                          value={cardNumber}
-                          onChange={(e) => setCardNumber(e.target.value)}
+                          placeholder="e.g. 5"
+                          value={tableNumber}
+                          onChange={(event) => setTableNumber(event.target.value)}
+                          required
                         />
                       </label>
-                      <div className="order-panel__grid-2">
-                        <label>
-                          Expiry
-                          <input
-                            placeholder="MM/YY"
-                            maxLength={5}
-                            value={cardExpiry}
-                            onChange={(e) => setCardExpiry(e.target.value)}
-                          />
-                        </label>
-                        <label>
-                          CVV
-                          <input
-                            type="password"
-                            placeholder="•••"
-                            maxLength={4}
-                            value={cardCvv}
-                            onChange={(e) => setCardCvv(e.target.value)}
-                          />
-                        </label>
-                      </div>
-                    </div>
-                  ) : paymentMethod === "netbanking" ? (
-                    <div className="payment-method-box">
                       <label>
-                        Select Bank
-                        <select
-                          value={selectedBank}
-                          onChange={(e) => setSelectedBank(e.target.value)}
-                          className="payment-select"
-                        >
-                          <option value="HDFC Bank">HDFC Bank</option>
-                          <option value="ICICI Bank">ICICI Bank</option>
-                          <option value="State Bank of India">State Bank of India (SBI)</option>
-                          <option value="Axis Bank">Axis Bank</option>
-                          <option value="Kotak Mahindra">Kotak Mahindra Bank</option>
-                        </select>
+                        Chair Code <span className="optional-tag">(optional)</span>
+                        <input
+                          placeholder="e.g. A"
+                          value={chairCode}
+                          onChange={(event) => setChairCode(event.target.value)}
+                          maxLength={4}
+                        />
                       </label>
                     </div>
-                  ) : (
-                    <div className="payment-method-box">
-                      <p className="desk-info">Pay in cash or card directly to your server at Table <strong>{formattedLocation}</strong> upon order arrival.</p>
+                    <div className="order-panel__location-preview">
+                      <span>Formatted Location:</span>
+                      <strong className="order-panel__location-tag">
+                        {formattedLocation ? formattedLocation : "Enter table number..."}
+                      </strong>
                     </div>
-                  )}
+                  </div>
+
+                  <label>
+                    Customer Name <span className="required-star">*</span>
+                    <input
+                      autoComplete="name"
+                      placeholder="e.g. Rahul Sharma"
+                      value={customerName}
+                      onChange={(event) => setCustomerName(event.target.value)}
+                      required
+                    />
+                  </label>
+                  <label>
+                    Mobile Number <span className="required-star">*</span>
+                    <input
+                      autoComplete="tel"
+                      inputMode="tel"
+                      placeholder="e.g. +91 9876543210"
+                      value={mobileNumber}
+                      onChange={(event) => setMobileNumber(event.target.value)}
+                      required
+                    />
+                  </label>
+
+                  {errorMessage ? <p className="order-panel__error">{errorMessage}</p> : null}
+                  <button className="order-panel__primary" type="submit">
+                    Continue to Payment · {formatPrice(totalInr)}
+                  </button>
+                </form>
+              ) : (
+                <div className="order-panel__payment">
+                  <span className="eyebrow">Checkout & Payment Gate</span>
+                  <h3>Confirm Payment of {formatPrice(totalInr)}</h3>
+                  <p>
+                    Location: <strong>Table {formattedLocation}</strong> · {customerName} ({cartItems.length} Food Items)
+                  </p>
+
+                  <fieldset className="order-panel__methods-fieldset">
+                    <legend>Select Payment Method</legend>
+                    <div className="order-panel__payment-methods">
+                      {(
+                        [
+                          { id: "upi", label: "Instant UPI / QR" },
+                          { id: "card", label: "Debit/Credit Card" },
+                          { id: "netbanking", label: "NetBanking" },
+                          { id: "desk", label: "Pay at Desk" }
+                        ] as const
+                      ).map((method) => (
+                        <button
+                          className={paymentMethod === method.id ? "is-selected" : ""}
+                          key={method.id}
+                          onClick={() => setPaymentMethod(method.id)}
+                          type="button"
+                        >
+                          {method.label}
+                        </button>
+                      ))}
+                    </div>
+                  </fieldset>
+
+                  <div className="order-panel__payment-details">
+                    {paymentMethod === "upi" ? (
+                      <div className="payment-upi-box">
+                        <div className="upi-qr-card">
+                          <div className="upi-qr-wrapper">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={upiQrCodeUrl} alt="Scan to Pay via UPI" className="upi-qr-img" width={180} height={180} />
+                            <span className="upi-qr-amount">Scan & Pay {formatPrice(totalInr)}</span>
+                          </div>
+
+                          <div className="upi-vpa-details">
+                            <span className="upi-vpa-label">Payee Merchant VPA:</span>
+                            <div className="upi-vpa-row">
+                              <strong className="upi-vpa-code">{MERCHANT_UPI_ID}</strong>
+                              <button type="button" className="upi-copy-btn" onClick={handleCopyUpi}>
+                                {copiedUpi ? "✓ Copied" : "📋 Copy ID"}
+                              </button>
+                            </div>
+                            <span className="upi-merchant-name">Name: {MERCHANT_NAME}</span>
+                          </div>
+                        </div>
+
+                        <a href={upiIntentUrl} className="upi-app-launcher-btn">
+                          📱 Open UPI App (GPay / PhonePe / Paytm / BHIM)
+                        </a>
+
+                        <div className="upi-utr-field">
+                          <label>
+                            Step 2: Enter 12-Digit Bank UTR / Ref No. <span className="required-star">*</span>
+                            <input
+                              placeholder="e.g. 423819283741 (from app receipt)"
+                              value={utrNumber}
+                              onChange={(e) => setUtrNumber(e.target.value.replace(/[^0-9A-Za-z]/g, ""))}
+                              maxLength={18}
+                              required
+                            />
+                          </label>
+                          <span className="payment-hint">Enter your 12-digit transaction ID after paying so the kitchen can confirm credit.</span>
+                        </div>
+                      </div>
+                    ) : paymentMethod === "card" ? (
+                      <div className="payment-method-box">
+                        <label>
+                          Card Number
+                          <input
+                            placeholder="4532 •••• •••• 8921"
+                            maxLength={19}
+                            value={cardNumber}
+                            onChange={(e) => setCardNumber(e.target.value)}
+                          />
+                        </label>
+                        <div className="order-panel__grid-2">
+                          <label>
+                            Expiry
+                            <input
+                              placeholder="MM/YY"
+                              maxLength={5}
+                              value={cardExpiry}
+                              onChange={(e) => setCardExpiry(e.target.value)}
+                            />
+                          </label>
+                          <label>
+                            CVV
+                            <input
+                              type="password"
+                              placeholder="•••"
+                              maxLength={4}
+                              value={cardCvv}
+                              onChange={(e) => setCardCvv(e.target.value)}
+                            />
+                          </label>
+                        </div>
+                      </div>
+                    ) : paymentMethod === "netbanking" ? (
+                      <div className="payment-method-box">
+                        <label>
+                          Select Bank
+                          <select
+                            value={selectedBank}
+                            onChange={(e) => setSelectedBank(e.target.value)}
+                            className="payment-select"
+                          >
+                            <option value="HDFC Bank">HDFC Bank</option>
+                            <option value="ICICI Bank">ICICI Bank</option>
+                            <option value="State Bank of India">State Bank of India (SBI)</option>
+                            <option value="Axis Bank">Axis Bank</option>
+                            <option value="Kotak Mahindra">Kotak Mahindra Bank</option>
+                          </select>
+                        </label>
+                      </div>
+                    ) : (
+                      <div className="payment-method-box">
+                        <p className="desk-info">
+                          Pay in cash or card directly to your server at Table <strong>{formattedLocation}</strong> upon order arrival.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  {errorMessage ? <p className="order-panel__error">{errorMessage}</p> : null}
+
+                  <button
+                    className="order-panel__razorpay-auto-btn"
+                    disabled={paymentState === "sending"}
+                    onClick={() => void handleRazorpayCheckout()}
+                    type="button"
+                  >
+                    ⚡ Auto-Verify via Razorpay Gateway (Instant)
+                  </button>
+
+                  <button
+                    className="order-panel__primary"
+                    disabled={paymentState === "sending"}
+                    onClick={() => void finalizePaidOrder()}
+                    type="button"
+                  >
+                    {paymentState === "sending" ? "Verifying & Transmitting..." : `Submit Paid Order (${formatPrice(totalInr)})`}
+                  </button>
+                  <button
+                    className="order-panel__secondary"
+                    disabled={paymentState === "sending"}
+                    onClick={() => setPaymentState("details")}
+                    type="button"
+                  >
+                    Back to Cart & Details
+                  </button>
                 </div>
-
-                {errorMessage ? <p className="order-panel__error">{errorMessage}</p> : null}
-
-                <button
-                  className="order-panel__razorpay-auto-btn"
-                  disabled={paymentState === "sending"}
-                  onClick={() => void handleRazorpayCheckout()}
-                  type="button"
-                >
-                  ⚡ Auto-Verify via Razorpay Gateway (Instant)
-                </button>
-
-                <button
-                  className="order-panel__primary"
-                  disabled={paymentState === "sending"}
-                  onClick={() => void finalizePaidOrder()}
-                  type="button"
-                >
-                  {paymentState === "sending" ? "Verifying & Transmitting..." : `Submit Paid Order (${formatPrice(totalInr)})`}
-                </button>
-                <button
-                  className="order-panel__secondary"
-                  disabled={paymentState === "sending"}
-                  onClick={() => setPaymentState("details")}
-                  type="button"
-                >
-                  Back to Details
-                </button>
-              </div>
-            )}
+              )
+            ) : null}
           </>
         )}
       </section>
     </div>
   );
 }
-

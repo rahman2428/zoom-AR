@@ -68,6 +68,15 @@ export interface OrderItem {
   unitPriceInr: number;
 }
 
+export interface CartItem {
+  cartItemId: string;
+  dishId: string;
+  dishName: string;
+  plateSize: PlateSize;
+  quantity: number;
+  unitPriceInr: number;
+}
+
 export interface RestaurantOrder {
   orderId: string;
   customerToken?: string;

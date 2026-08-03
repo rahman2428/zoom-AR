@@ -12,7 +12,7 @@ import {
 } from "@/lib/ar/assets";
 import { resolveRenderEngine } from "@/lib/ar/engines/resolve-engine";
 import { openQuickLook } from "@/lib/ar/quick-look";
-import type { MenuCategory, RestaurantMenu } from "@/lib/menu/types";
+import type { CartItem, MenuCategory, MenuDish, PlateSize, RestaurantMenu } from "@/lib/menu/types";
 import { useArCapabilities } from "@/hooks/use-ar-capabilities";
 import { useQuickLookAvailability } from "@/hooks/use-quick-look-availability";
 import { CameraArModal } from "@/components/rendering/camera-ar-modal";
@@ -81,6 +81,102 @@ export function MenuExperience({ menu }: MenuExperienceProps) {
   const [trackerOrderId, setTrackerOrderId] = useState<string | undefined>();
   const [trackerCustomerToken, setTrackerCustomerToken] = useState<string | undefined>();
   const [launchState, setLaunchState] = useState<"idle" | "launching">("idle");
+  const [cartItems, setCartItems] = useState<CartItem[]>([]);
+  const [cartPortion, setCartPortion] = useState<PlateSize>("full");
+  const [cartToast, setCartToast] = useState<{ message: string; timestamp: number } | null>(null);
+
+  // Load persistent cart from localStorage on mount
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const raw = localStorage.getItem("zoom_ar_customer_cart_items");
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) setCartItems(parsed);
+        }
+      } catch {
+        // ignore
+      }
+    }
+  }, []);
+
+  function updateCartState(newCart: CartItem[]) {
+    setCartItems(newCart);
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.setItem("zoom_ar_customer_cart_items", JSON.stringify(newCart));
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  function handleAddToCart(dishToAdd: MenuDish, plateSize: PlateSize = "full") {
+    const cartItemId = `${dishToAdd.id}-${plateSize}`;
+    const unitPriceInr = plateSize === "full" ? dishToAdd.priceInr : deriveHalfPlatePrice(dishToAdd.priceInr);
+
+    const existingIndex = cartItems.findIndex((item) => item.cartItemId === cartItemId);
+    let updatedCart: CartItem[];
+
+    if (existingIndex >= 0) {
+      updatedCart = cartItems.map((item, idx) =>
+        idx === existingIndex ? { ...item, quantity: item.quantity + 1 } : item
+      );
+    } else {
+      const newItem: CartItem = {
+        cartItemId,
+        dishId: dishToAdd.id,
+        dishName: dishToAdd.name,
+        plateSize,
+        quantity: 1,
+        unitPriceInr
+      };
+      updatedCart = [...cartItems, newItem];
+    }
+
+    updateCartState(updatedCart);
+
+    // Show confirmation toast
+    setCartToast({
+      message: `🛒 Added 1x ${dishToAdd.name} (${plateSize === "full" ? "Full" : "Half"}) to cart!`,
+      timestamp: Date.now()
+    });
+
+    setTimeout(() => {
+      setCartToast(null);
+    }, 3500);
+  }
+
+  function handleUpdateCartQuantity(cartItemId: string, delta: number) {
+    const updated = cartItems
+      .map((item) => {
+        if (item.cartItemId === cartItemId) {
+          const newQty = item.quantity + delta;
+          return newQty > 0 ? { ...item, quantity: newQty } : null;
+        }
+        return item;
+      })
+      .filter((item): item is CartItem => item !== null);
+
+    updateCartState(updated);
+  }
+
+  function handleRemoveCartItem(cartItemId: string) {
+    const updated = cartItems.filter((item) => item.cartItemId !== cartItemId);
+    updateCartState(updated);
+  }
+
+  function handleClearCart() {
+    updateCartState([]);
+  }
+
+  function handleOpenOrderPanel() {
+    if (cartItems.length === 0 && currentDish) {
+      handleAddToCart(currentDish, cartPortion);
+    }
+    setOrderPanelOpen(true);
+  }
+
   const deferredSearchInput = useDeferredValue(searchInput);
   const normalizedSearchQuery = deferredSearchInput.trim().toLowerCase();
   const hasSearchQuery = normalizedSearchQuery.length > 0;
@@ -125,9 +221,6 @@ export function MenuExperience({ menu }: MenuExperienceProps) {
   const engine = resolveRenderEngine(capabilities, currentDish, {
     quickLookReady: canTryQuickLook
   });
-  const dishCountLabel = hasSearchResults
-    ? `${String(currentIndex + 1).padStart(2, "0")} / ${String(filteredDishes.length).padStart(2, "0")}`
-    : "00 / 00";
   const searchResultLabel = hasSearchQuery
     ? `${filteredDishes.length} result${filteredDishes.length === 1 ? "" : "s"}`
     : `${categoryDishes.length} dishes`;
@@ -144,9 +237,6 @@ export function MenuExperience({ menu }: MenuExperienceProps) {
             canTryQuickLook
         );
   const canOpenArView = hasSearchResults && (hasNativeAr || hasCameraFallback);
-  const dishNameParts = currentDish.name.split(" ");
-  const dishLeadWord = dishNameParts[0] ?? currentDish.name;
-  const dishTrailingWords = dishNameParts.slice(1).join(" ");
 
   function cycleDish(direction: 1 | -1) {
     if (!hasSearchResults || filteredDishes.length <= 1) {
@@ -265,6 +355,15 @@ export function MenuExperience({ menu }: MenuExperienceProps) {
         </div>
 
         <div className="experience-header__actions">
+          {cartItems.length > 0 ? (
+            <button
+              className="cart-header-pill"
+              onClick={handleOpenOrderPanel}
+              type="button"
+            >
+              🛒 Cart ({cartItems.reduce((acc, i) => acc + i.quantity, 0)} • ₹{cartItems.reduce((acc, i) => acc + i.unitPriceInr * i.quantity, 0)})
+            </button>
+          ) : null}
           <button
             className="tracker-link-pill"
             onClick={() => setTrackerOpen(true)}
@@ -342,33 +441,34 @@ export function MenuExperience({ menu }: MenuExperienceProps) {
             </button>
           </div>
         )}
-      </section>
 
-      <section className="dish-summary">
         <AnimatePresence mode="wait">
           <motion.article
             key={currentDish.id}
-            className="dish-summary__card"
-            initial={{ opacity: 0, y: 14 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            transition={{ duration: 0.3, ease: "easeOut" }}
+            className="dish-summary glass-panel"
+            exit={{ opacity: 0, y: 15 }}
+            initial={{ opacity: 0, y: 15 }}
+            transition={{ duration: 0.25 }}
           >
-            <span className="dish-summary__index">{dishCountLabel}</span>
+            <div className="dish-summary__header">
+              <div>
+                <span className="dish-summary__badge">
+                  {currentDish.category === "veg"
+                    ? "Pure Vegetarian"
+                    : currentDish.category === "non-veg"
+                    ? "Non-Vegetarian"
+                    : "Chef Special"}
+                </span>
+                <h3>{currentDish.name}</h3>
+              </div>
+              <strong className="dish-summary__price">{formatPrice(fullPlatePrice)}</strong>
+            </div>
 
-            <h1 className="dish-summary__title">
-              <span>{dishLeadWord}</span>
-              {dishTrailingWords ? <em>{` ${dishTrailingWords}`}</em> : null}
-            </h1>
-
-            <p className="dish-summary__subtitle">{currentDish.tagline}</p>
+            <p className="dish-summary__tagline">{currentDish.tagline}</p>
             <p className="dish-summary__description">{currentDish.description}</p>
 
-            <div className="dish-summary__metrics">
-              <div>
-                <span>Price</span>
-                <strong>{formatPrice(currentDish.priceInr)}</strong>
-              </div>
+            <div className="dish-summary__meta">
               <div>
                 <span>Calories</span>
                 <strong>{currentDish.calories} kcal</strong>
@@ -380,15 +480,30 @@ export function MenuExperience({ menu }: MenuExperienceProps) {
             </div>
 
             <div className="dish-summary__plate-pricing">
-              <span className="dish-summary__plate-pricing-label">Plate Pricing</span>
-              <div className="dish-summary__plate-pricing-values">
-                <p>
-                  Full Plate <strong>{formatPrice(fullPlatePrice)}</strong>
-                </p>
-                <p>
-                  Half Plate <strong>{formatPrice(halfPlatePrice)}</strong>
-                </p>
+              <span className="dish-summary__plate-pricing-label">Portion Size & Add to Order</span>
+              <div className="dish-summary__portion-selector">
+                <button
+                  type="button"
+                  className={cartPortion === "full" ? "is-selected" : ""}
+                  onClick={() => setCartPortion("full")}
+                >
+                  Full ({formatPrice(fullPlatePrice)})
+                </button>
+                <button
+                  type="button"
+                  className={cartPortion === "half" ? "is-selected" : ""}
+                  onClick={() => setCartPortion("half")}
+                >
+                  Half ({formatPrice(halfPlatePrice)})
+                </button>
               </div>
+              <button
+                type="button"
+                className="dish-summary__add-cart-btn"
+                onClick={() => handleAddToCart(currentDish, cartPortion)}
+              >
+                🛒 Add {currentDish.name} to Cart
+              </button>
             </div>
 
             <p className="dish-summary__ingredients">{currentDish.ingredients.join(" | ")}</p>
@@ -398,6 +513,23 @@ export function MenuExperience({ menu }: MenuExperienceProps) {
           </motion.article>
         </AnimatePresence>
       </section>
+
+      {/* Cart Addition Toast Popup */}
+      <AnimatePresence>
+        {cartToast ? (
+          <motion.div
+            className="cart-add-toast"
+            initial={{ opacity: 0, y: 30, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 20, scale: 0.9 }}
+            transition={{ type: "spring", stiffness: 400, damping: 25 }}
+            onClick={() => setOrderPanelOpen(true)}
+          >
+            <span>{cartToast.message}</span>
+            <strong className="toast-checkout-link">View Cart & Checkout →</strong>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
 
       <footer className="experience-footer">
         <button
@@ -413,10 +545,10 @@ export function MenuExperience({ menu }: MenuExperienceProps) {
         <button
           className="experience-footer__order"
           disabled={!hasSearchResults}
-          onClick={() => setOrderPanelOpen(true)}
+          onClick={handleOpenOrderPanel}
           type="button"
         >
-          Order this dish
+          🛒 View Order Cart ({cartItems.reduce((acc, i) => acc + i.quantity, 0)})
         </button>
 
         <div className="experience-footer__quick-controls">
@@ -449,8 +581,12 @@ export function MenuExperience({ menu }: MenuExperienceProps) {
       />
       {orderPanelOpen ? (
         <OrderPanel
-          dish={currentDish}
+          cartItems={cartItems}
           onClose={() => setOrderPanelOpen(false)}
+          onUpdateQuantity={handleUpdateCartQuantity}
+          onRemoveItem={handleRemoveCartItem}
+          onAddMoreItems={() => setOrderPanelOpen(false)}
+          onClearCart={handleClearCart}
           onTrackOrder={(orderId, customerToken) => {
             setTrackerOrderId(orderId);
             setTrackerCustomerToken(customerToken);
