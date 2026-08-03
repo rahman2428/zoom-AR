@@ -4,7 +4,7 @@ import path from "node:path";
 import type { RestaurantOrder } from "@/lib/menu/types";
 
 const ONE_MONTH_MS = 30 * 24 * 60 * 60 * 1000;
-const KITCHEN_STAFF_KEY = process.env.KITCHEN_STAFF_KEY || "8899";
+const KITCHEN_STAFF_KEY = process.env.KITCHEN_STAFF_KEY || "9852";
 
 const ALLOWED_ORIGINS = [
   "https://zoom-ar.vercel.app",

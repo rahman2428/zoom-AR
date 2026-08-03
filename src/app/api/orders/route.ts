@@ -231,7 +231,7 @@ function filterOrdersByRange(orders: RestaurantOrder[], range?: string | null): 
   return orders;
 }
 
-const KITCHEN_STAFF_KEY = process.env.KITCHEN_STAFF_KEY || "8899";
+const KITCHEN_STAFF_KEY = process.env.KITCHEN_STAFF_KEY || "9852";
 const PAYMENT_SECRET_KEY = process.env.PAYMENT_SECRET_KEY || "CINEMATIC_AR_REST_PAY_SECRET_9981273";
 
 // Allowed production origins
