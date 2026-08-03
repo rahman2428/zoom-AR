@@ -622,6 +622,7 @@ export function MenuExperience({ menu }: MenuExperienceProps) {
         />
       ) : null}
       <ActiveOrderBanner
+        isModalOpen={orderPanelOpen || trackerOpen || fullScreen3D || cameraModalOpen}
         onOpenTracker={(orderId, customerToken) => {
           setTrackerOrderId(orderId);
           setTrackerCustomerToken(customerToken);

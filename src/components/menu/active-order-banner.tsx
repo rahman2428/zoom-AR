@@ -7,7 +7,15 @@ import { playStageSound } from "@/lib/sounds";
 
 interface ActiveOrderBannerProps {
   onOpenTracker: (orderId: string, customerToken?: string) => void;
+  isModalOpen?: boolean;
 }
+
+const PROGRESS_PERCENTAGE: Record<OrderStatus, number> = {
+  new: 25,
+  preparing: 65,
+  ready: 90,
+  completed: 100
+};
 
 const STATUS_CONFIG: Record<
   OrderStatus,
@@ -39,7 +47,7 @@ const STATUS_CONFIG: Record<
   }
 };
 
-export function ActiveOrderBanner({ onOpenTracker }: ActiveOrderBannerProps) {
+export function ActiveOrderBanner({ onOpenTracker, isModalOpen }: ActiveOrderBannerProps) {
   const [activeOrder, setActiveOrder] = useState<RestaurantOrder | null>(null);
   const [dismissed, setDismissed] = useState(false);
   const [toastAlert, setToastAlert] = useState<{
@@ -140,7 +148,8 @@ export function ActiveOrderBanner({ onOpenTracker }: ActiveOrderBannerProps) {
     };
   }, []);
 
-  if (!activeOrder) {
+  // Suppress notification banner if no order active OR if a full modal is open (prevents overlap)
+  if (!activeOrder || isModalOpen) {
     return null;
   }
 
@@ -209,6 +218,14 @@ export function ActiveOrderBanner({ onOpenTracker }: ActiveOrderBannerProps) {
                 </div>
                 <h4 className="banner-title">{cfg.title}</h4>
                 <p className="banner-subtitle">{cfg.subtitle}</p>
+
+                {/* Progress bar track */}
+                <div className="banner-progress-track">
+                  <div
+                    className={`banner-progress-fill banner-progress-fill--${activeOrder.status}`}
+                    style={{ width: `${PROGRESS_PERCENTAGE[activeOrder.status]}%` }}
+                  />
+                </div>
               </div>
 
               <button
