@@ -84,6 +84,7 @@ export function MenuExperience({ menu }: MenuExperienceProps) {
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [cartPortion, setCartPortion] = useState<PlateSize>("full");
   const [cartToast, setCartToast] = useState<{ message: string; timestamp: number } | null>(null);
+  const [fullScreen3D, setFullScreen3D] = useState(false);
 
   // Load persistent cart from localStorage on mount
   useEffect(() => {
@@ -371,7 +372,13 @@ export function MenuExperience({ menu }: MenuExperienceProps) {
           >
             📍 Track Order
           </button>
-          <span className="interactive-pill">3D Interactive</span>
+          <button
+            className="interactive-pill full-screen-trigger-btn"
+            onClick={() => setFullScreen3D(true)}
+            type="button"
+          >
+            ⛶ 3D Full Screen
+          </button>
         </div>
       </header>
 
@@ -621,6 +628,78 @@ export function MenuExperience({ menu }: MenuExperienceProps) {
           setTrackerOpen(true);
         }}
       />
+
+      {/* 3D Full Screen Viewport Modal */}
+      {fullScreen3D ? (
+        <div className="fullscreen-3d-backdrop" role="dialog" aria-modal="true">
+          <div className="fullscreen-3d-topbar">
+            <div className="fullscreen-3d-title">
+              <span className={`dish-summary__badge dish-summary__badge--${currentDish.category}`}>
+                {currentDish.category === "veg"
+                  ? "Pure Vegetarian"
+                  : currentDish.category === "non-veg"
+                  ? "Non-Vegetarian"
+                  : "Chef Special"}
+              </span>
+              <h3>{currentDish.name}</h3>
+              <strong className="fullscreen-3d-price">{formatPrice(fullPlatePrice)}</strong>
+            </div>
+
+            <button
+              type="button"
+              className="fullscreen-3d-close-btn"
+              onClick={() => setFullScreen3D(false)}
+            >
+              ✕ Exit Fullscreen
+            </button>
+          </div>
+
+          <div className="fullscreen-3d-stage-wrap">
+            <RenderStage
+              ref={stageRef}
+              capabilities={capabilities}
+              currentIndex={currentIndex}
+              dish={currentDish}
+              engine={engine}
+              onNext={() => cycleDish(1)}
+              onPrevious={() => cycleDish(-1)}
+              preloadDishes={preloadDishes}
+              totalCount={filteredDishes.length}
+            />
+          </div>
+
+          <div className="fullscreen-3d-bottombar">
+            <div className="fullscreen-3d-portions">
+              <button
+                type="button"
+                className={cartPortion === "full" ? "is-selected" : ""}
+                onClick={() => setCartPortion("full")}
+              >
+                Full ({formatPrice(fullPlatePrice)})
+              </button>
+              <button
+                type="button"
+                className={cartPortion === "half" ? "is-selected" : ""}
+                onClick={() => setCartPortion("half")}
+              >
+                Half ({formatPrice(halfPlatePrice)})
+              </button>
+            </div>
+
+            <button
+              type="button"
+              className="fullscreen-3d-add-btn"
+              onClick={() => {
+                handleAddToCart(currentDish, cartPortion);
+                setFullScreen3D(false);
+                handleOpenOrderPanel();
+              }}
+            >
+              🛒 Add to Cart & Checkout ({cartPortion === "full" ? formatPrice(fullPlatePrice) : formatPrice(halfPlatePrice)})
+            </button>
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }
