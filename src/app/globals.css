@@ -1246,18 +1246,19 @@ button:focus-visible {
   }
 
   .dish-summary {
-    margin-top: -70px;
+    margin-top: 0;
   }
 }
 
 @media (max-width: 860px) {
   .experience-shell {
-    width: min(100%, 460px);
+    width: 100%;
+    max-width: 100%;
     padding:
       calc(12px + env(safe-area-inset-top))
-      10px
-      calc(96px + env(safe-area-inset-bottom));
-    gap: 10px;
+      12px
+      calc(140px + env(safe-area-inset-bottom));
+    gap: 14px;
   }
 
   .experience-header {
@@ -1265,13 +1266,13 @@ button:focus-visible {
     top: calc(env(safe-area-inset-top) + 2px);
     z-index: 30;
     gap: 8px 10px;
-    padding: 8px;
-    border: 1px solid var(--line-soft);
-    border-radius: 18px;
+    padding: 10px 12px;
+    border: 1px solid rgba(243, 198, 76, 0.28);
+    border-radius: 20px;
     background:
-      linear-gradient(180deg, rgba(255, 255, 255, 0.06), transparent 35%),
-      rgba(16, 12, 16, 0.88);
-    backdrop-filter: blur(14px);
+      linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent 35%),
+      rgba(12, 16, 24, 0.94);
+    backdrop-filter: blur(16px);
   }
 
   .brand-block strong {
@@ -1347,7 +1348,7 @@ button:focus-visible {
   .stage-shell,
   .stage-overlay,
   .search-empty {
-    min-height: min(46svh, 430px);
+    min-height: min(48svh, 440px);
     border-radius: 20px;
   }
 
@@ -1394,8 +1395,9 @@ button:focus-visible {
 
   .dish-summary {
     margin-top: 0;
+    margin-bottom: 30px;
     width: 100%;
-    padding-left: 0;
+    padding: 18px;
   }
 
   .dish-summary__card {
