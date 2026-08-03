@@ -20,6 +20,7 @@ import { RenderStage, type RenderStageHandle } from "@/components/rendering/rend
 import { CategoryTabs } from "./category-tabs";
 import { OrderPanel } from "./order-panel";
 import { OrderTracker } from "./order-tracker";
+import { ActiveOrderBanner } from "./active-order-banner";
 
 interface MenuExperienceProps {
   menu: RestaurantMenu;
@@ -464,6 +465,13 @@ export function MenuExperience({ menu }: MenuExperienceProps) {
           onClose={() => setTrackerOpen(false)}
         />
       ) : null}
+      <ActiveOrderBanner
+        onOpenTracker={(orderId, customerToken) => {
+          setTrackerOrderId(orderId);
+          setTrackerCustomerToken(customerToken);
+          setTrackerOpen(true);
+        }}
+      />
     </main>
   );
 }
