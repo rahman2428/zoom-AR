@@ -162,9 +162,17 @@ export function ActiveOrderBanner({ onOpenTracker, isModalOpen }: ActiveOrderBan
         {toastAlert ? (
           <motion.div
             className={`order-accepted-toast toast--${toastAlert.status}`}
+            drag="x"
+            dragConstraints={{ left: 0, right: 0 }}
+            dragElastic={0.8}
+            onDragEnd={(_, info) => {
+              if (Math.abs(info.offset.x) > 70 || Math.abs(info.velocity.x) > 250) {
+                setToastAlert(null);
+              }
+            }}
             initial={{ opacity: 0, y: -50, scale: 0.9 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -30, scale: 0.9 }}
+            exit={{ opacity: 0, scale: 0.85, x: 200 }}
             transition={{ type: "spring", stiffness: 400, damping: 25 }}
             onClick={() => {
               const token = typeof window !== "undefined" ? localStorage.getItem("last_customer_token") || undefined : undefined;
@@ -181,15 +189,24 @@ export function ActiveOrderBanner({ onOpenTracker, isModalOpen }: ActiveOrderBan
         ) : null}
       </AnimatePresence>
 
-      {/* Persistent Floating Mini Banner on Menu */}
+      {/* Persistent Floating Mini Banner on Menu (Supports Swipe-to-Dismiss) */}
       <AnimatePresence>
         {!dismissed ? (
           <motion.aside
             className="active-order-banner glass-panel"
+            drag="x"
+            dragConstraints={{ left: 0, right: 0 }}
+            dragElastic={0.8}
+            onDragEnd={(_, info) => {
+              if (Math.abs(info.offset.x) > 70 || Math.abs(info.velocity.x) > 250) {
+                setDismissed(true);
+              }
+            }}
             initial={{ opacity: 0, y: -30, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -20, scale: 0.95 }}
+            exit={{ opacity: 0, scale: 0.85, x: 200 }}
             transition={{ type: "spring", stiffness: 350, damping: 25 }}
+            whileDrag={{ scale: 0.98, opacity: 0.9 }}
           >
             <div
               className="active-order-banner__content"

@@ -3529,10 +3529,11 @@ button:focus-visible {
 .active-order-banner {
   position: fixed;
   top: calc(env(safe-area-inset-top) + 12px);
-  left: 50%;
-  transform: translateX(-50%);
+  left: 0;
+  right: 0;
+  margin: 0 auto;
   z-index: 50; /* Stays below modals (z-index 9999) so it never overlaps! */
-  width: min(94vw, 520px);
+  width: min(92vw, 500px);
   padding: 12px 16px;
   border-radius: 22px;
   background: linear-gradient(135deg, rgba(12, 16, 24, 0.96), rgba(8, 11, 18, 0.98));
@@ -3542,6 +3543,39 @@ button:focus-visible {
   display: flex;
   align-items: center;
   gap: 12px;
+  touch-action: pan-y;
+  user-select: none;
+  cursor: grab;
+}
+
+.active-order-banner:active {
+  cursor: grabbing;
+}
+
+.order-accepted-toast {
+  position: fixed;
+  top: calc(env(safe-area-inset-top) + 14px);
+  left: 0;
+  right: 0;
+  margin: 0 auto;
+  z-index: 9999;
+  width: min(92vw, 480px);
+  padding: 14px 18px;
+  border-radius: 20px;
+  background: linear-gradient(135deg, rgba(16, 24, 38, 0.96), rgba(10, 14, 24, 0.98));
+  backdrop-filter: blur(24px);
+  border: 1.5px solid rgba(243, 198, 76, 0.6);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8), 0 0 35px rgba(243, 198, 76, 0.35);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  cursor: grab;
+  touch-action: pan-y;
+  user-select: none;
+}
+
+.order-accepted-toast:active {
+  cursor: grabbing;
 }
 
 .active-order-banner__content {
