@@ -77,6 +77,36 @@ export function OrderTracker({ initialOrderId, initialToken, onClose }: OrderTra
         }
       }
 
+      // If server cold-started or lost the order, check customer local history backup
+      if (res.status === 404 && typeof window !== "undefined") {
+        try {
+          const rawHistory = localStorage.getItem("zoom_ar_customer_orders_history");
+          if (rawHistory) {
+            const history = JSON.parse(rawHistory) as RestaurantOrder[];
+            const matched = history.find(
+              (o) => o.orderId.toLowerCase() === query.trim().toLowerCase()
+            );
+            if (matched) {
+              // Trigger auto-rehydration to restore order on server
+              void fetch("/api/orders", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  action: "rehydrate",
+                  rehydrateOrders: [matched]
+                })
+              });
+
+              setActiveOrder(matched);
+              setLoading(false);
+              return;
+            }
+          }
+        } catch {
+          // ignore
+        }
+      }
+
       if (res.status === 403 || res.status === 401) {
         setErrorMsg("Privacy Protection: Access restricted to authorized session holder.");
       } else {

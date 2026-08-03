@@ -40,41 +40,134 @@ function loadOrdersFromDisk(): RestaurantOrder[] {
   return [];
 }
 
-function pruneAndPersistOrders(orders: RestaurantOrder[]): RestaurantOrder[] {
+// Multi-tiered Persistent Storage Strategy: Cloud KV + Resilient Disk + In-Memory Store
+async function loadOrdersFromCloudKV(): Promise<RestaurantOrder[]> {
+  const kvUrl = process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL;
+  const kvToken = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN;
+  const storageUrl = process.env.ORDERS_STORAGE_URL;
+
+  if (kvUrl && kvToken) {
+    try {
+      const res = await fetch(`${kvUrl}/get/zoom_ar_orders_v1`, {
+        headers: { Authorization: `Bearer ${kvToken}` },
+        cache: "no-store"
+      });
+      if (res.ok) {
+        const json = await res.json();
+        const raw = json.result ?? json;
+        const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch {
+      // Fallback silently
+    }
+  }
+
+  if (storageUrl) {
+    try {
+      const res = await fetch(storageUrl, { cache: "no-store" });
+      if (res.ok) {
+        const parsed = await res.json();
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch {
+      // Fallback silently
+    }
+  }
+
+  return [];
+}
+
+async function saveOrdersToCloudKV(orders: RestaurantOrder[]): Promise<void> {
+  const kvUrl = process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL;
+  const kvToken = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN;
+
+  if (kvUrl && kvToken) {
+    try {
+      await fetch(`${kvUrl}/set/zoom_ar_orders_v1`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${kvToken}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(JSON.stringify(orders)),
+        cache: "no-store"
+      });
+    } catch {
+      // Ignore cloud sync failures gracefully
+    }
+  }
+}
+
+function mergeOrders(existing: RestaurantOrder[], incoming: RestaurantOrder[]): RestaurantOrder[] {
+  const map = new Map<string, RestaurantOrder>();
+
+  for (const ord of existing) {
+    if (ord && ord.orderId) {
+      map.set(ord.orderId, ord);
+    }
+  }
+
+  for (const ord of incoming) {
+    if (ord && ord.orderId) {
+      const prev = map.get(ord.orderId);
+      if (!prev) {
+        map.set(ord.orderId, ord);
+      } else {
+        map.set(ord.orderId, {
+          ...prev,
+          ...ord,
+          // Preserve customerToken if existing had it
+          customerToken: ord.customerToken || prev.customerToken
+        });
+      }
+    }
+  }
+
+  const result = Array.from(map.values());
   const cutoffTime = Date.now() - ONE_MONTH_MS;
-  
-  // Retain exclusively orders created within the last 30 calendar days (1 month)
-  const validOrders = orders.filter((ord) => {
-    const createdTime = new Date(ord.createdAt).getTime();
-    return !isNaN(createdTime) && createdTime >= cutoffTime;
+  const valid = result.filter((o) => {
+    const t = new Date(o.createdAt).getTime();
+    return !isNaN(t) && t >= cutoffTime;
   });
+  valid.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  return valid;
+}
 
-  // Sort descending by creation timestamp (newest first)
-  validOrders.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-
-  // Update in-memory reference
-  globalForOrders.ordersStore = validOrders;
+function pruneAndPersistOrders(orders: RestaurantOrder[]): RestaurantOrder[] {
+  const merged = mergeOrders(globalForOrders.ordersStore || [], orders);
+  globalForOrders.ordersStore = merged;
 
   // Persist to disk
   try {
     const filePath = getStoreFilePath();
-    fs.writeFileSync(filePath, JSON.stringify(validOrders, null, 2), "utf8");
+    fs.writeFileSync(filePath, JSON.stringify(merged, null, 2), "utf8");
   } catch {
-    // Ignore write errors on read-only environments
+    // Ignore write errors on read-only serverless filesystems
   }
 
-  return validOrders;
+  // Trigger cloud sync asynchronously
+  void saveOrdersToCloudKV(merged);
+
+  return merged;
 }
 
-function getStoredOrders(): RestaurantOrder[] {
-  if (!globalForOrders.ordersStore || globalForOrders.ordersStore.length === 0) {
-    globalForOrders.ordersStore = loadOrdersFromDisk();
+async function getStoredOrders(): Promise<RestaurantOrder[]> {
+  let currentMemory = globalForOrders.ordersStore || [];
+  const diskOrders = loadOrdersFromDisk();
+  
+  if (currentMemory.length === 0 && diskOrders.length === 0) {
+    const cloudOrders = await loadOrdersFromCloudKV();
+    currentMemory = mergeOrders(currentMemory, cloudOrders);
+  } else {
+    currentMemory = mergeOrders(currentMemory, diskOrders);
   }
-  return pruneAndPersistOrders(globalForOrders.ordersStore);
+
+  return pruneAndPersistOrders(currentMemory);
 }
 
-function saveStoredOrders(orders: RestaurantOrder[]) {
-  pruneAndPersistOrders(orders);
+function saveStoredOrders(orders: RestaurantOrder[]): RestaurantOrder[] {
+  return pruneAndPersistOrders(orders);
 }
 
 function generateOrdersCSV(orders: RestaurantOrder[]): string {
@@ -321,7 +414,7 @@ export async function GET(request: Request) {
     );
   }
 
-  const currentOrders = getStoredOrders();
+  const currentOrders = await getStoredOrders();
 
   // Export Request for Authorized Staff
   if (isExport) {
@@ -408,8 +501,24 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   const corsHeaders = getCorsHeaders(request);
-  const order = (await request.json().catch(() => null)) as IncomingOrderPayload | null;
+  const body = (await request.json().catch(() => null)) as
+    | (IncomingOrderPayload & { action?: string; rehydrateOrders?: RestaurantOrder[] })
+    | null;
 
+  // Support Client-Side Auto-Rehydration Sync for Staff / Customer Sessions
+  if (body?.action === "rehydrate" && Array.isArray(body.rehydrateOrders)) {
+    const current = await getStoredOrders();
+    const validBackups = body.rehydrateOrders.filter(
+      (o) => o && typeof o.orderId === "string" && Array.isArray(o.items) && typeof o.totalInr === "number"
+    );
+    const updated = saveStoredOrders(mergeOrders(current, validBackups));
+    return NextResponse.json(
+      { success: true, rehydratedCount: validBackups.length, totalOrders: updated.length },
+      { status: 200, headers: corsHeaders }
+    );
+  }
+
+  const order = body;
   const hasValidItems =
     Boolean(order?.items?.length) &&
     order!.items!.every(
@@ -489,9 +598,9 @@ export async function POST(request: Request) {
     createdAt: new Date().toISOString()
   };
 
-  const currentOrders = getStoredOrders();
-  currentOrders.unshift(finalizedOrder);
-  saveStoredOrders(currentOrders);
+  const currentOrders = await getStoredOrders();
+  const updatedOrders = [finalizedOrder, ...currentOrders];
+  saveStoredOrders(updatedOrders);
 
   // Dispatch to optional webhook
   const kitchenWebhookUrl = process.env.KITCHEN_WEBHOOK_URL;
@@ -534,7 +643,7 @@ export async function PATCH(request: Request) {
     );
   }
 
-  const currentOrders = getStoredOrders();
+  const currentOrders = await getStoredOrders();
   const targetOrder = currentOrders.find((o) => o.orderId === body.orderId);
   if (!targetOrder) {
     return NextResponse.json({ error: "Order not found." }, { status: 404, headers: corsHeaders });

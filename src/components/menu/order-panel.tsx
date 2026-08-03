@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { formatPrice } from "@/lib/ar/assets";
-import type { MenuDish, OrderItem, PaymentMethod, PlateSize } from "@/lib/menu/types";
+import type { MenuDish, OrderItem, PaymentMethod, PlateSize, RestaurantOrder } from "@/lib/menu/types";
 
 interface OrderPanelProps {
   dish: MenuDish;
@@ -143,6 +143,7 @@ async function generatePaymentSignatureClient(transactionId: string, totalInr: n
       const payload = (await response.json().catch(() => null)) as {
         orderId?: string;
         customerToken?: string;
+        order?: RestaurantOrder;
         error?: string;
       } | null;
 
@@ -159,6 +160,16 @@ async function generatePaymentSignatureClient(transactionId: string, totalInr: n
         localStorage.setItem("last_order_id", generatedId);
         if (generatedToken) {
           localStorage.setItem("last_customer_token", generatedToken);
+        }
+        if (payload?.order) {
+          try {
+            const rawHistory = localStorage.getItem("zoom_ar_customer_orders_history");
+            const history = rawHistory ? JSON.parse(rawHistory) : [];
+            const updatedHistory = Array.isArray(history) ? [payload.order, ...history] : [payload.order];
+            localStorage.setItem("zoom_ar_customer_orders_history", JSON.stringify(updatedHistory));
+          } catch {
+            // ignore
+          }
         }
       }
       setPaymentState("success");
