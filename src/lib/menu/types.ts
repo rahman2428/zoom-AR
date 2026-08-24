@@ -58,7 +58,7 @@ export type PlateSize = "half" | "full";
 
 export type OrderStatus = "new" | "preparing" | "ready" | "completed";
 
-export type PaymentMethod = "upi" | "card" | "netbanking" | "desk";
+export type PaymentMethod = "razorpay";
 
 export interface OrderItem {
   dishId: string;

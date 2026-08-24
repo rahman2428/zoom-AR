@@ -204,7 +204,7 @@ function generateOrdersCSV(orders: RestaurantOrder[]): string {
       `"${o.mobileNumber.replace(/"/g, '""')}"`,
       `"${itemsSummary.replace(/"/g, '""')}"`,
       o.totalInr,
-      `"${(o.paymentMethod || "upi").toUpperCase()}"`,
+      `"${(o.paymentMethod || "razorpay").toUpperCase()}"`,
       `"${(o.utrNumber || "N/A").replace(/"/g, '""')}"`,
       `"${(o.payeeUpi || "8603412912@sbi").replace(/"/g, '""')}"`,
       `"${(o.paymentStatus || "paid").toUpperCase()}"`,
@@ -618,9 +618,9 @@ export async function POST(request: Request) {
     totalInr: order.totalInr,
     status: "new",
     paymentStatus: "paid",
-    paymentMethod: order.paymentMethod ?? "upi",
+    paymentMethod: order.paymentMethod ?? "razorpay",
     utrNumber: sanitizeInput(order.utrNumber, 30) || undefined,
-    payeeUpi: sanitizeInput(order.payeeUpi, 50) || "8603412912@sbi",
+    payeeUpi: sanitizeInput(order.payeeUpi, 50) || undefined,
     createdAt: new Date().toISOString()
   };
 
@@ -679,4 +679,4 @@ export async function PATCH(request: Request) {
   saveStoredOrders(currentOrders);
 
   return NextResponse.json({ success: true, order: targetOrder }, { status: 200, headers: corsHeaders });
-}
+}

@@ -98,7 +98,7 @@ function buildCSV(orders: RestaurantOrder[]): string {
       `"${o.mobileNumber.replace(/"/g, '""')}"`,
       `"${itemsSummary.replace(/"/g, '""')}"`,
       o.totalInr,
-      `"${(o.paymentMethod || "upi").toUpperCase()}"`,
+      `"${(o.paymentMethod || "razorpay").toUpperCase()}"`,
       `"${(o.paymentStatus || "paid").toUpperCase()}"`,
       `"${o.status.toUpperCase()}"`
     ];

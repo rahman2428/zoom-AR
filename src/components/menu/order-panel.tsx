@@ -28,20 +28,11 @@ export function OrderPanel({
   const [chairCode, setChairCode] = useState("");
   const [customerName, setCustomerName] = useState("");
   const [mobileNumber, setMobileNumber] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("upi");
-  const [utrNumber, setUtrNumber] = useState("");
-  const [copiedUpi, setCopiedUpi] = useState(false);
-  const [cardNumber, setCardNumber] = useState("");
-  const [cardExpiry, setCardExpiry] = useState("");
-  const [cardCvv, setCardCvv] = useState("");
-  const [selectedBank, setSelectedBank] = useState("HDFC Bank");
+  const [paymentMethod] = useState<PaymentMethod>("razorpay");
   const [paymentState, setPaymentState] = useState<"details" | "payment" | "sending" | "success" | "error">("details");
   const [errorMessage, setErrorMessage] = useState("");
   const [confirmedOrderId, setConfirmedOrderId] = useState("");
   const [confirmedToken, setConfirmedToken] = useState("");
-
-  const MERCHANT_UPI_ID = "8603412912@sbi";
-  const MERCHANT_NAME = "Zoom AR Kitchen";
 
   const cleanTable = tableNumber.trim().toUpperCase();
   const cleanChair = chairCode.trim().toUpperCase();
@@ -52,19 +43,6 @@ export function OrderPanel({
   const itemsSummaryText = cartItems
     .map((item) => `${item.quantity}x ${item.dishName} (${item.plateSize})`)
     .join(", ");
-
-  const upiIntentUrl = `upi://pay?pa=${MERCHANT_UPI_ID}&pn=${encodeURIComponent(MERCHANT_NAME)}&am=${totalInr}&cu=INR&tn=${encodeURIComponent(`ZoomAR_${cartItems.length}_items`)}`;
-  const upiQrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(upiIntentUrl)}`;
-
-  function handleCopyUpi() {
-    try {
-      void navigator.clipboard.writeText(MERCHANT_UPI_ID);
-      setCopiedUpi(true);
-      setTimeout(() => setCopiedUpi(false), 2500);
-    } catch {
-      // Fallback ignore
-    }
-  }
 
   function validateDetails() {
     if (cartItems.length === 0) {
@@ -113,14 +91,6 @@ export function OrderPanel({
   }
 
   async function finalizePaidOrder() {
-    if (paymentMethod === "upi") {
-      const cleanUtr = utrNumber.trim();
-      if (!cleanUtr || cleanUtr.length < 8) {
-        setErrorMessage("Please enter your Bank UTR / Ref Number (e.g., 423819283741) after making payment.");
-        return;
-      }
-    }
-
     setPaymentState("sending");
     setErrorMessage("");
 
@@ -150,8 +120,6 @@ export function OrderPanel({
           totalInr,
           paymentStatus: "paid",
           paymentMethod,
-          utrNumber: utrNumber.trim() || undefined,
-          payeeUpi: MERCHANT_UPI_ID,
           transactionId,
           paymentTimestamp,
           paymentSignature
@@ -249,6 +217,12 @@ export function OrderPanel({
         name: "Zoom AR Restaurant",
         description: `Table ${formattedLocation} (${cartItems.length} Food Items)`,
         order_id: data.gatewayOrderId,
+        method: {
+          upi: true,
+          card: true,
+          netbanking: true,
+          wallet: true
+        },
         prefill: {
           name: customerName,
           contact: mobileNumber
@@ -272,7 +246,7 @@ export function OrderPanel({
                 items: orderItems,
                 totalInr,
                 paymentStatus: "paid",
-                paymentMethod: "upi",
+                paymentMethod: "razorpay",
                 transactionId: response.razorpay_payment_id,
                 gatewayOrderId: response.razorpay_order_id,
                 paymentSignature: response.razorpay_signature,
@@ -384,11 +358,9 @@ export function OrderPanel({
             <p className="order-items-summary-tag">
               Items: <strong>{itemsSummaryText}</strong>
             </p>
-            {utrNumber ? (
-              <p className="utr-confirmation">
-                Payment UTR Ref: <code>{utrNumber}</code> · Sent to Merchant <code>{MERCHANT_UPI_ID}</code>
-              </p>
-            ) : null}
+            <p className="utr-confirmation">
+              Payment completed securely through Razorpay Checkout.
+            </p>
             {onTrackOrder ? (
               <button
                 className="order-panel__primary"
@@ -552,160 +524,29 @@ export function OrderPanel({
                 </form>
               ) : (
                 <div className="order-panel__payment">
-                  <span className="eyebrow">Checkout & Payment Gate</span>
-                  <h3>Confirm Payment of {formatPrice(totalInr)}</h3>
+                  <span className="eyebrow">Secure checkout</span>
+                  <h3>Pay {formatPrice(totalInr)} with Razorpay</h3>
                   <p>
                     Location: <strong>Table {formattedLocation}</strong> · {customerName} ({cartItems.length} Food Items)
                   </p>
 
-                  <fieldset className="order-panel__methods-fieldset">
-                    <legend>Select Payment Method</legend>
-                    <div className="order-panel__payment-methods">
-                      {(
-                        [
-                          { id: "upi", label: "Instant UPI / QR" },
-                          { id: "card", label: "Debit/Credit Card" },
-                          { id: "netbanking", label: "NetBanking" },
-                          { id: "desk", label: "Pay at Desk" }
-                        ] as const
-                      ).map((method) => (
-                        <button
-                          className={paymentMethod === method.id ? "is-selected" : ""}
-                          key={method.id}
-                          onClick={() => setPaymentMethod(method.id)}
-                          type="button"
-                        >
-                          {method.label}
-                        </button>
-                      ))}
-                    </div>
-                  </fieldset>
-
                   <div className="order-panel__payment-details">
-                    {paymentMethod === "upi" ? (
-                      <div className="payment-upi-box">
-                        <div className="upi-qr-card">
-                          <div className="upi-qr-wrapper">
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img src={upiQrCodeUrl} alt="Scan to Pay via UPI" className="upi-qr-img" width={180} height={180} />
-                            <span className="upi-qr-amount">Scan & Pay {formatPrice(totalInr)}</span>
-                          </div>
-
-                          <div className="upi-vpa-details">
-                            <span className="upi-vpa-label">Payee Merchant VPA:</span>
-                            <div className="upi-vpa-row">
-                              <strong className="upi-vpa-code">{MERCHANT_UPI_ID}</strong>
-                              <button type="button" className="upi-copy-btn" onClick={handleCopyUpi}>
-                                {copiedUpi ? "✓ Copied" : "📋 Copy ID"}
-                              </button>
-                            </div>
-                            <span className="upi-merchant-name">Name: {MERCHANT_NAME}</span>
-                          </div>
-                        </div>
-
-                        <a href={upiIntentUrl} className="upi-app-launcher-btn">
-                          📱 Open UPI App (GPay / PhonePe / Paytm / BHIM)
-                        </a>
-
-                        <div className="upi-utr-field">
-                          <label>
-                            Step 2: Enter 12-Digit Bank UTR / Ref No. <span className="required-star">*</span>
-                            <input
-                              placeholder="e.g. 423819283741 (from app receipt)"
-                              value={utrNumber}
-                              onChange={(e) => setUtrNumber(e.target.value.replace(/[^0-9A-Za-z]/g, ""))}
-                              maxLength={18}
-                              required
-                            />
-                          </label>
-                          <span className="payment-hint">Enter your 12-digit transaction ID after paying so the kitchen can confirm credit.</span>
-                        </div>
-                      </div>
-                    ) : paymentMethod === "card" ? (
-                      <div className="payment-method-box">
-                        <label>
-                          Card Number
-                          <input
-                            placeholder="4532 •••• •••• 8921"
-                            maxLength={19}
-                            value={cardNumber}
-                            onChange={(e) => setCardNumber(e.target.value)}
-                          />
-                        </label>
-                        <div className="order-panel__grid-2">
-                          <label>
-                            Expiry
-                            <input
-                              placeholder="MM/YY"
-                              maxLength={5}
-                              value={cardExpiry}
-                              onChange={(e) => setCardExpiry(e.target.value)}
-                            />
-                          </label>
-                          <label>
-                            CVV
-                            <input
-                              type="password"
-                              placeholder="•••"
-                              maxLength={4}
-                              value={cardCvv}
-                              onChange={(e) => setCardCvv(e.target.value)}
-                            />
-                          </label>
-                        </div>
-                      </div>
-                    ) : paymentMethod === "netbanking" ? (
-                      <div className="payment-method-box">
-                        <label>
-                          Select Bank
-                          <select
-                            value={selectedBank}
-                            onChange={(e) => setSelectedBank(e.target.value)}
-                            className="payment-select"
-                          >
-                            <option value="HDFC Bank">HDFC Bank</option>
-                            <option value="ICICI Bank">ICICI Bank</option>
-                            <option value="State Bank of India">State Bank of India (SBI)</option>
-                            <option value="Axis Bank">Axis Bank</option>
-                            <option value="Kotak Mahindra">Kotak Mahindra Bank</option>
-                          </select>
-                        </label>
-                      </div>
-                    ) : (
-                      <div className="payment-method-box">
-                        <p className="desk-info">
-                          Pay in cash or card directly to your server at Table <strong>{formattedLocation}</strong> upon order arrival.
-                        </p>
-                      </div>
-                    )}
+                    <div className="payment-method-box">
+                      <p className="desk-info">
+                        Proceed with a streamlined, secure Razorpay payment flow for instant confirmation and kitchen notification.
+                      </p>
+                    </div>
                   </div>
 
                   {errorMessage ? <p className="order-panel__error">{errorMessage}</p> : null}
 
                   <button
-                    className="order-panel__razorpay-auto-btn"
+                    className="order-panel__primary"
                     disabled={paymentState === "sending"}
                     onClick={() => void handleRazorpayCheckout()}
                     type="button"
                   >
-                    ⚡ Auto-Verify via Razorpay Gateway (Instant)
-                  </button>
-
-                  <button
-                    className="order-panel__primary"
-                    disabled={paymentState === "sending"}
-                    onClick={() => void finalizePaidOrder()}
-                    type="button"
-                  >
-                    {paymentState === "sending" ? "Verifying & Transmitting..." : `Submit Paid Order (${formatPrice(totalInr)})`}
-                  </button>
-                  <button
-                    className="order-panel__secondary"
-                    disabled={paymentState === "sending"}
-                    onClick={() => setPaymentState("details")}
-                    type="button"
-                  >
-                    Back to Cart & Details
+                    {paymentState === "sending" ? "Processing payment..." : "Pay & Confirm Order"}
                   </button>
                 </div>
               )
