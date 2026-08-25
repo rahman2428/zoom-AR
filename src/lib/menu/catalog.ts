@@ -46,7 +46,7 @@ export const restaurantMenu: RestaurantMenu = {
       tagline: "Crisp greens, citrus pearls, and a chilled herb finish.",
       description:
         "A fresh starter designed to read beautifully in AR with layered greens, translucent dressing highlights, and a real-world footprint that feels table-ready.",
-      priceInr: 540,
+      priceInr: 1,
       calories: 280,
       ingredients: ["Baby lettuce", "Orange segments", "Feta crumble", "Mint oil"],
       assets: {
@@ -71,7 +71,7 @@ export const restaurantMenu: RestaurantMenu = {
       tagline: "Charred crust, molten cheese, and premium overhead presence.",
       description:
         "An immersive hero plate tuned for top-down framing and close inspection, with a generous silhouette that benefits from the larger AR footprint.",
-      priceInr: 760,
+      priceInr: 2,
       calories: 690,
       ingredients: ["Slow dough", "Buffalo mozzarella", "Roasted tomato", "Basil ash"],
       assets: {
@@ -101,7 +101,7 @@ export const restaurantMenu: RestaurantMenu = {
       tagline: "Charred crust, molten cheese, and premium overhead presence.",
       description:
         "An immersive hero plate tuned for top-down framing and close inspection, with a generous silhouette that benefits from the larger AR footprint.",
-      priceInr: 760,
+      priceInr: 5,
       calories: 690,
       ingredients: ["Slow dough", "Buffalo mozzarella", "Roasted tomato", "Basil ash"],
       assets: {
