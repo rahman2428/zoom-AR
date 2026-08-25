@@ -18,7 +18,7 @@
       }
     ],
     "totalInr": 1,
-    "status": "new",
+    "status": "completed",
     "paymentStatus": "paid",
     "paymentMethod": "razorpay",
     "createdAt": "2026-08-25T08:12:12.633Z"
